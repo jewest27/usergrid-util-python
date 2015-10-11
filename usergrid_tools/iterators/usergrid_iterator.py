@@ -1,14 +1,14 @@
 from Queue import Empty
-import argparse
 import json
 import logging
 import sys
 from multiprocessing import Queue, Process
-import datetime
-import requests
 import traceback
 from logging.handlers import RotatingFileHandler
 import time
+
+import argparse
+
 from usergrid import UsergridClient, UsergridError
 
 __author__ = 'Jeff West @ ApigeeCorporation'
@@ -47,13 +47,15 @@ config = {}
 
 
 class Worker(Process):
-    def __init__(self, queue, source_client, target_client, handler_function):
+    def __init__(self, queue, source_client, target_client, handler_function, max_empty_count=10, queue_timeout=10):
         super(Worker, self).__init__()
         logger.warning('Creating worker!')
         self.queue = queue
         self.handler_function = handler_function
         self.source_client = source_client
         self.target_client = target_client
+        self.max_empty_count = max_empty_count
+        self.queue_timeout = queue_timeout
 
     def run(self):
 
@@ -61,31 +63,38 @@ class Worker(Process):
         keep_going = True
 
         count_processed = 0
+        empty_count = 0
 
         while keep_going:
-            empty_count = 0
 
             try:
-                app, collection_name, entity = self.queue.get(timeout=60)
+                org, app, collection_name, entity = self.queue.get(timeout=self.queue_timeout)
+
+                empty_count = 0
 
                 if self.handler_function is not None:
-                    processed = self.handler_function(app, collection_name, entity, self.source_client,
+                    processed = self.handler_function(org, app, collection_name, entity, self.source_client,
                                                       self.target_client)
 
                     if processed:
                         count_processed += 1
-                        logger.info('Processed [%sth] app/collection/name = %s / %s / %s' % (
-                            count_processed, app, collection_name, entity.get('uuid')))
+                        logger.info('Processed [%sth] app/collection/name/uuid = %s / %s / %s / %s' % (
+                            count_processed, app, collection_name, entity.get('name'), entity.get('uuid')))
 
             except KeyboardInterrupt, e:
                 raise e
 
             except Empty:
-                logger.warning('EMPTY! Count=%s' % empty_count)
+                logger.warning(
+                    'No task received after timeout=[%s]! Empty Count=%s' % (self.queue_timeout, empty_count))
 
                 empty_count += 1
-                if empty_count > 10:
+
+                if empty_count >= self.max_empty_count:
+                    logger.warning('Stopping work after empty_count=[%s]' % empty_count)
                     keep_going = False
+
+        logger.warning('Worker finished!')
 
 
 def create_new(org_name, app_name, collection_name, source_entity, source_client, target_client, attempts=0):
@@ -101,7 +110,6 @@ def create_new(org_name, app_name, collection_name, source_entity, source_client
         org = target_client.organization(target_org)
         app = org.application(target_app)
         collection = app.collection(target_collection)
-
         e = collection.entity_from_data(source_entity)
         e.put()
 
@@ -123,13 +131,13 @@ def parse_args():
                         required=True)
 
     parser.add_argument('-a', '--app',
-                        help='Multiple, name of apps to include',
-                        required=True,
+                        help='Multiple, name of apps to include, skip to include all',
+                        default=[],
                         action='append')
 
     parser.add_argument('-c', '--collection',
-                        help='Multiple, name of collections to include, include \'*\' to do all collections',
-                        required=True,
+                        help='Multiple, name of collections to include, skip to include all',
+                        default=[],
                         action='append')
 
     parser.add_argument('-s', '--source_config',
@@ -223,18 +231,22 @@ def init():
     config['target_endpoint'].update(config['target_config']['credentials'][target_org])
 
 
-def wait_for(threads, sleep_time=3000):
-    wait = True
+def wait_for(threads, sleep_time=3):
+    threads_working = 100
 
-    while wait:
-        wait = False
+    while threads_working > 0:
+        threads_working = 0
 
         for t in threads:
 
             if t.is_alive():
-                wait = True
-                time.sleep(sleep_time)
-                break
+                threads_working += 1
+
+        if threads_working > 0:
+            logger.warn('Waiting for [%s] threads to finish...' % threads_working)
+            time.sleep(sleep_time)
+
+    logger.warn('Worker Threads finished!')
 
 
 def main():
@@ -249,19 +261,26 @@ def main():
 
     apps_to_process = config.get('app')
     collections_to_process = config.get('collection')
-    target_org = config.get('org_mapping', {}).get(config.get('org'), config.get('org'))
+    source_org = config.get('org')
+    target_org = config.get('org_mapping', {}).get(source_org, source_org)
 
     source_client = UsergridClient(api_url=config.get('source_endpoint').get('api_url'),
-                                   org_name=config.get('org'))
+                                   org_name=source_org)
 
-    source_client.authenticate_management_client(config['source_config']['credentials'][config.get('org')])
+    source_client.authenticate_management_client(
+        client_credentials=config['source_config']['credentials'][source_org])
 
     target_client = UsergridClient(api_url=config.get('target_endpoint').get('api_url'),
                                    org_name=target_org)
 
-    target_client.authenticate_management_client(config['target_config']['credentials'][target_org])
+    target_client.authenticate_management_client(client_credentials=config['target_config']['credentials'][target_org])
 
-    workers = [Worker(queue, source_client, target_client, create_new) for x in xrange(config.get('workers'))]
+    workers = [Worker(queue=queue,
+                      source_client=source_client,
+                      target_client=target_client,
+                      handler_function=create_new,
+                      max_empty_count=1,
+                      queue_timeout=10) for x in xrange(config.get('workers'))]
     [w.start() for w in workers]
 
     for app in source_client.list_apps():
@@ -272,11 +291,15 @@ def main():
 
         logger.warning('Processing app=[%s]' % app)
 
-        target_app_name = config.get('app_mapping', {}).get(app, app)
+        # target_app_name = config.get('app_mapping', {}).get(app, app)
+        #
+        source_app = source_client.organization(source_org).application(app)
 
-        target_app = target_client.organization(target_org).application(target_app_name)
+        for collection_name, collection in source_app.list_collections().iteritems():
 
-        for collection_name, collection in target_app.list_collections():
+            if collection_name in ['events', 'queues']:
+                logger.warning('Skipping internal collection=[%s]' % collection_name)
+                continue
 
             if len(collections_to_process) > 0 and collection_name not in collections_to_process:
                 logger.warning('Skipping collection=[%s]' % collection_name)
@@ -295,10 +318,10 @@ def main():
             except KeyboardInterrupt:
                 [w.terminate() for w in workers]
 
-        logger.info('DONE!')
+        logger.info('Publishing entities complete!')
 
     wait_for(workers)
-    logger.info('workers DONE!')
+    logger.info('All done!!')
 
 
 main()
