@@ -15,31 +15,48 @@ __author__ = 'Jeff West @ ApigeeCorporation'
 
 logger = logging.getLogger('UsergridIterator')
 
+# SAMPLE CONFIG FILE for source and target
+sample_config = {
+    "endpoint": {
+        "api_url": "https://api.usergrid.com",
+        "limit": 100
+    },
 
-def init_logging(stdout_enabled=True):
+    "credentials": {
+        "myOrg": {
+            "client_id": "<<client_id>>",
+            "client_secret": "<<client_secret>>"
+        }
+    }
+}
+
+
+def init_logging(file_enabled=False, stdout_enabled=True):
     root_logger = logging.getLogger()
-    log_file_name = './app_iterator.log'
+    root_logger.setLevel(logging.INFO)
+    logging.getLogger('urllib3.connectionpool').setLevel(logging.WARN)
+    logging.getLogger('requests.packages.urllib3.connectionpool').setLevel(logging.WARN)
+
     log_formatter = logging.Formatter(fmt='%(asctime)s | %(name)s | %(processName)s | %(levelname)s | %(message)s',
                                       datefmt='%m/%d/%Y %I:%M:%S %p')
 
-    rotating_file = logging.handlers.RotatingFileHandler(filename=log_file_name,
-                                                         mode='a',
-                                                         maxBytes=204857600,
-                                                         backupCount=10)
-    rotating_file.setFormatter(log_formatter)
-    rotating_file.setLevel(logging.INFO)
+    if file_enabled:
+        log_file_name = './UsergridIterator.log'
 
-    root_logger.addHandler(rotating_file)
-    root_logger.setLevel(logging.INFO)
+        rotating_file = logging.handlers.RotatingFileHandler(filename=log_file_name,
+                                                             mode='a',
+                                                             maxBytes=204857600,
+                                                             backupCount=10)
+        rotating_file.setFormatter(log_formatter)
+        rotating_file.setLevel(logging.INFO)
 
-    logging.getLogger('boto').setLevel(logging.ERROR)
-    logging.getLogger('urllib3.connectionpool').setLevel(logging.WARN)
-    logging.getLogger('requests.packages.urllib3.connectionpool').setLevel(logging.WARN)
+        root_logger.addHandler(rotating_file)
 
     if stdout_enabled:
         stdout_logger = logging.StreamHandler(sys.stdout)
         stdout_logger.setFormatter(log_formatter)
         stdout_logger.setLevel(logging.INFO)
+
         root_logger.addHandler(stdout_logger)
 
 
@@ -47,22 +64,51 @@ config = {}
 
 
 class Worker(Process):
-    def __init__(self, queue, source_client, target_client, handler_function, max_empty_count=10, queue_timeout=10):
+    """
+    The worker is used to perform a set of handler functions in a chain.  Work is provided for the Worker thread(s) on
+    a JoinableQueue.  The thread will continue until either 1) it is explicitly terminated or 2) until it does not
+     receive work on the queue after a consecutive number of attempts (max_empty_count) using the specified timeout
+     (queue_timeout)
+    """
+
+    def __init__(self,
+                 queue,
+                 source_client,
+                 target_client,
+                 max_empty_count=3,
+                 queue_timeout=10,
+                 function_chain=None):
+        """
+        This is an example handler function which can transform an entity. Multiple handler functions can be used to
+        process a entity.  The response is an entity which will get passed to the next handler in the chain
+
+        :param queue: The queue on which to listen for work
+        :param source_client: The UsergridClient of the source Usergrid instance
+        :param target_client: The UsergridClient of the target Usergrid instance
+        :param max_empty_count: The maximum number of times for a worker to not receive work after checking the queue
+        :param queue_timeout: The timeout for waiting for work on the queue
+        :param function_chain: An array of function pointers which will be executed in array sequence, expeting the following parameters: org_name, app_name, collection_name, entity, source_client, target_client, attempts=0p
+        """
+
         super(Worker, self).__init__()
         logger.warning('Creating worker!')
+
+        if not function_chain:
+            function_chain = []
+
+        self.function_chain = function_chain
         self.queue = queue
-        self.handler_function = handler_function
         self.source_client = source_client
         self.target_client = target_client
         self.max_empty_count = max_empty_count
         self.queue_timeout = queue_timeout
 
     def run(self):
-
         logger.info('starting run()...')
         keep_going = True
 
         count_processed = 0
+        count_failed = 0
         empty_count = 0
 
         while keep_going:
@@ -71,15 +117,28 @@ class Worker(Process):
                 org, app, collection_name, entity = self.queue.get(timeout=self.queue_timeout)
 
                 empty_count = 0
+                success = True
+                entity_param = entity
 
-                if self.handler_function is not None:
-                    processed = self.handler_function(org, app, collection_name, entity, self.source_client,
-                                                      self.target_client)
+                for handler in self.function_chain:
 
-                    if processed:
-                        count_processed += 1
-                        logger.info('Processed [%sth] app/collection/name/uuid = %s / %s / %s / %s' % (
-                            count_processed, app, collection_name, entity.get('name'), entity.get('uuid')))
+                    if entity_param is not None:
+                        try:
+                            entity_param = handler(org, app, collection_name, entity_param, self.source_client,
+                                                   self.target_client)
+                        except Exception, e:
+                            logger.error(e)
+                            print traceback.format_exc()
+                            success = False
+
+                if success:
+                    count_processed += 1
+                    logger.info('Processed [%sth] SUCCESS app/collection/name/uuid = %s / %s / %s / %s' % (
+                        count_processed, app, collection_name, entity.get('name'), entity.get('uuid')))
+                else:
+                    count_failed += 1
+                    logger.warning('Processed [%sth] FAILURE app/collection/name/uuid = %s / %s / %s / %s' % (
+                        count_processed, app, collection_name, entity.get('name'), entity.get('uuid')))
 
             except KeyboardInterrupt, e:
                 raise e
@@ -94,32 +153,85 @@ class Worker(Process):
                     logger.warning('Stopping work after empty_count=[%s]' % empty_count)
                     keep_going = False
 
-        logger.warning('Worker finished!')
+        logger.info('Worker finished!')
 
 
-def create_new(org_name, app_name, collection_name, source_entity, source_client, target_client, attempts=0):
+def filter_entity(org_name, app_name, collection_name, entity_data, source_client, target_client, attempts=0):
+    """
+    This is an example handler function which can filter entities. Multiple handler functions can be used to
+    process a entity.  The response is an entity which will get passed to the next handler in the chain
+
+    :param org_name: The org name from whence this entity came
+    :param app_name: The app name from whence this entity came
+    :param collection_name: The collection name from whence this entity came
+    :param entity: The entity retrieved from the source instance
+    :param source_client: The UsergridClient for the source Usergrid instance
+    :param target_client: The UsergridClient for the target Usergrid instance
+    :param attempts: the number of previous attempts this function was run (manual, not part of the framework)
+    :return: an entity.  If response is None then the chain will stop.
+    """
+
+    # return None if you want to stop the chain (filter the entity out)
+    if 'blah' in entity_data:
+        return None
+
+    # return the entity to keep going
+    return entity_data
+
+
+def transform_entity(org_name, app_name, collection_name, entity_data, source_client, target_client, attempts=0):
+    """
+    This is an example handler function which can transform an entity. Multiple handler functions can be used to
+    process a entity.  The response is an entity which will get passed to the next handler in the chain
+
+    :param org_name: The org name from whence this entity came
+    :param app_name: The app name from whence this entity came
+    :param collection_name: The collection name from whence this entity came
+    :param entity: The entity retrieved from the source instance
+    :param source_client: The UsergridClient for the source Usergrid instance
+    :param target_client: The UsergridClient for the target Usergrid instance
+    :param attempts: the number of previous attempts this function was run (manual, not part of the framework)
+    :return: an entity.  If response is None then the chain will stop.
+    """
+    # this just returns the entity with no transform
+    return entity_data
+
+
+def create_new(org_name, app_name, collection_name, entity_data, source_client, target_client, attempts=0):
+    """
+    This is an example handler function which can be used to create a new entity in the target instance (based on the
+    target_client) parameter. Multiple handler functions can be used to process a entity.  The response is an entity
+    which will get passed to the next handler in the chain
+
+    :param org_name: The org name from whence this entity came
+    :param app_name: The app name from whence this entity came
+    :param collection_name: The collection name from whence this entity came
+    :param entity_data: The entity retrieved from the source instance
+    :param source_client: The UsergridClient for the source Usergrid instance
+    :param target_client: The UsergridClient for the target Usergrid instance
+    :param attempts: the number of previous attempts this function was run (manual, not part of the framework)
+    :return: an entity.  If response is None then the chain will stop.
+    """
+
     attempts += 1
 
-    if 'metadata' in source_entity: source_entity.pop('metadata')
+    if 'metadata' in entity_data: entity_data.pop('metadata')
 
-    target_org = config.get('org_mapping', {}).get(org_name, org_name)
+    target_org = config.get('target_org')
     target_app = config.get('app_mapping', {}).get(app_name, app_name)
     target_collection = config.get('collection_mapping', {}).get(collection_name, collection_name)
 
-    try:
-        org = target_client.organization(target_org)
-        app = org.application(target_app)
-        collection = app.collection(target_collection)
-        e = collection.entity_from_data(source_entity)
-        e.put()
+    if target_client:
+        try:
+            c = target_client.org(target_org).app(target_app).collection(target_collection)
+            e = c.entity_from_data(entity_data)
+            e.put()
 
-        return True
+        except UsergridError, err:
+            logger.error(err)
+            raise err
 
-    except UsergridError, e:
-        print traceback.format_exc()
-        logger.error(e)
-
-    return False
+    return None
 
 
 def parse_args():
@@ -139,6 +251,11 @@ def parse_args():
                         help='Multiple, name of collections to include, skip to include all',
                         default=[],
                         action='append')
+
+    parser.add_argument('--ql',
+                        help='The Query string for processing the source collection(s)',
+                        type=str,
+                        default='select *')
 
     parser.add_argument('-s', '--source_config',
                         help='The configuration of the source endpoint/org',
@@ -160,10 +277,15 @@ def parse_args():
                         type=bool,
                         default=False)
 
-    parser.add_argument('--ql',
-                        help='The QL to use in the filter',
-                        type=str,
-                        default='select *')
+    parser.add_argument('--max_empty_count',
+                        help='The number of iterations for an individual worker to receive no work before stopping',
+                        type=int,
+                        default=3)
+
+    parser.add_argument('--queue_timeout',
+                        help='The duration in seconds for an individual worker queue poll before Empty is raised',
+                        type=int,
+                        default=10)
 
     parser.add_argument('--map_app',
                         help="A colon-separated string such as 'apples:oranges' which indicates to put data from the app named 'apples' from the source endpoint into app named 'oranges' in the target endpoint",
@@ -175,10 +297,9 @@ def parse_args():
                         default=[],
                         action='append')
 
-    parser.add_argument('--map_org',
-                        help="A colon-separated string such as 'red:blue' which indicates to put data from org named 'red' from the source endpoint into a collection named 'blue' in the target endpoint, applicable to all apps",
-                        default=[],
-                        action='append')
+    parser.add_argument('--target_org',
+                        help="The org name at the Usergrid destination instance",
+                        type=str)
 
     my_args = parser.parse_args(sys.argv[1:])
 
@@ -222,22 +343,31 @@ def init():
         else:
             logger.warning('Skipping Org mapping: [%s]' % mapping)
 
-    config['source_endpoint'] = config['source_config'].get('endpoint').copy()
-    config['source_endpoint'].update(config['source_config']['credentials'][config['org']])
+    if 'source_config' in config:
+        config['source_endpoint'] = config['source_config'].get('endpoint').copy()
+        config['source_endpoint'].update(config['source_config']['credentials'][config['org']])
 
-    target_org = config.get('org_mapping', {}).get(config.get('org'), config.get('org'))
+    config['target_org'] = config['target_org'] if config['target_org'] else config['org']
 
-    config['target_endpoint'] = config['target_config'].get('endpoint').copy()
-    config['target_endpoint'].update(config['target_config']['credentials'][target_org])
+    if 'target_config' in config:
+        config['target_endpoint'] = config['target_config'].get('endpoint').copy()
+        config['target_endpoint'].update(config['target_config']['credentials'][config['target_org']])
 
 
-def wait_for(threads, sleep_time=3):
+def wait_for(arr_threads, sleep_time=3):
+    """
+    This function pauses the thread until the array of threads which is provided all stop working
+
+    :param arr_threads: an array of Process objects to monitor
+    :param sleep_time: the time to sleep between evaluating the array for completion
+    :return: None
+    """
     threads_working = 100
 
     while threads_working > 0:
         threads_working = 0
 
-        for t in threads:
+        for t in arr_threads:
 
             if t.is_alive():
                 threads_working += 1
@@ -249,79 +379,107 @@ def wait_for(threads, sleep_time=3):
     logger.warn('Worker Threads finished!')
 
 
+class UsergridIterator:
+    def __init__(self):
+        pass
+
+    def get_to_work(self):
+        global config
+
+        queue = Queue()
+        logger.warning('Starting workers...')
+
+        apps_to_process = config.get('app')
+        collections_to_process = config.get('collection')
+        source_org = config['org']
+        target_org = config.get('target_org', config.get('org'))
+
+        source_client = None
+        target_client = None
+
+        try:
+            source_client = UsergridClient(api_url=config['source_endpoint']['api_url'],
+                                           org_name=source_org)
+            source_client.authenticate_management_client(
+                client_credentials=config['source_config']['credentials'][source_org])
+
+        except UsergridError, e:
+            logger.critical(e)
+            exit()
+
+        if 'target_endpoint' in config:
+            try:
+                target_client = UsergridClient(api_url=config['target_endpoint']['api_url'],
+                                               org_name=target_org)
+                target_client.authenticate_management_client(
+                    client_credentials=config['target_config']['credentials'][target_org])
+
+            except UsergridError, e:
+                logger.critical(e)
+                exit()
+
+        function_chain = [filter_entity, transform_entity, create_new]
+
+        workers = [Worker(queue=queue,
+                          source_client=source_client,
+                          target_client=target_client,
+                          function_chain=function_chain,
+                          max_empty_count=config.get('max_empty_count', 3),
+                          queue_timeout=config.get('queue_timeout', 10))
+
+                   for x in xrange(config.get('workers'))]
+
+        [w.start() for w in workers]
+
+        for app in source_client.list_apps():
+
+            if len(apps_to_process) > 0 and app not in apps_to_process:
+                logger.warning('Skipping app=[%s]' % app)
+                continue
+
+            logger.warning('Processing app=[%s]' % app)
+
+            source_app = source_client.organization(source_org).application(app)
+
+            for collection_name, collection in source_app.list_collections().iteritems():
+
+                if collection_name in ['events', 'queues']:
+                    logger.warning('Skipping internal collection=[%s]' % collection_name)
+                    continue
+
+                if len(collections_to_process) > 0 and collection_name not in collections_to_process:
+                    logger.warning('Skipping collection=[%s]' % collection_name)
+                    continue
+
+                logger.warning('Processing collection=%s' % collection_name)
+
+                counter = 0
+
+                try:
+                    for entity in collection.query(ql=config.get('ql'),
+                                                   limit=config.get('source_endpoint', {}).get('limit', 100)):
+                        counter += 1
+                        queue.put((config.get('org'), app, collection_name, entity))
+
+                except KeyboardInterrupt:
+                    [w.terminate() for w in workers]
+
+            logger.info('Publishing entities complete!')
+
+        wait_for(workers)
+
+        logger.info('All done!!')
+
+
 def main():
     global config
-
     config = parse_args()
     init()
 
     init_logging()
-    queue = Queue()
-    logger.warning('Starting workers...')
 
-    apps_to_process = config.get('app')
-    collections_to_process = config.get('collection')
-    source_org = config.get('org')
-    target_org = config.get('org_mapping', {}).get(source_org, source_org)
-
-    source_client = UsergridClient(api_url=config.get('source_endpoint').get('api_url'),
-                                   org_name=source_org)
-
-    source_client.authenticate_management_client(
-        client_credentials=config['source_config']['credentials'][source_org])
-
-    target_client = UsergridClient(api_url=config.get('target_endpoint').get('api_url'),
-                                   org_name=target_org)
-
-    target_client.authenticate_management_client(client_credentials=config['target_config']['credentials'][target_org])
-
-    workers = [Worker(queue=queue,
-                      source_client=source_client,
-                      target_client=target_client,
-                      handler_function=create_new,
-                      max_empty_count=1,
-                      queue_timeout=10) for x in xrange(config.get('workers'))]
-    [w.start() for w in workers]
-
-    for app in source_client.list_apps():
-
-        if app not in apps_to_process and '*' not in apps_to_process:
-            logger.warning('Skipping app=[%s]' % app)
-            continue
-
-        logger.warning('Processing app=[%s]' % app)
-
-        # target_app_name = config.get('app_mapping', {}).get(app, app)
-        #
-        source_app = source_client.organization(source_org).application(app)
-
-        for collection_name, collection in source_app.list_collections().iteritems():
-
-            if collection_name in ['events', 'queues']:
-                logger.warning('Skipping internal collection=[%s]' % collection_name)
-                continue
-
-            if len(collections_to_process) > 0 and collection_name not in collections_to_process:
-                logger.warning('Skipping collection=[%s]' % collection_name)
-                continue
-
-            logger.warning('Processing collection=%s' % collection_name)
-
-            counter = 0
-
-            try:
-                for entity in collection.query(ql=config.get('ql'),
-                                               limit=config.get('source_endpoint').get('limit')):
-                    counter += 1
-                    queue.put((config.get('org'), app, collection_name, entity))
-
-            except KeyboardInterrupt:
-                [w.terminate() for w in workers]
-
-        logger.info('Publishing entities complete!')
-
-    wait_for(workers)
-    logger.info('All done!!')
+    UsergridIterator().get_to_work()
 
 
-main()
+if __name__ == '__main__':
+    main()
