@@ -33,14 +33,14 @@ urllib3.contrib.pyopenssl.inject_into_urllib3()
 
 logger = logging.getLogger('CrossRegionRepair')
 
-token_url_template = "{protocol}://{host}/management/token"
-org_management_url_template = "{protocol}://{host}/management/organizations/{org}/applications?access_token={access_token}"
-org_url_template = "{protocol}://{host}/{org}?access_token={access_token}"
-app_url_template = "{protocol}://{host}/{org}/{app}?access_token={access_token}"
-collection_url_template = "{protocol}://{host}/{org}/{app}/{collection}?access_token={access_token}"
-collection_query_url_template = "{protocol}://{host}/{org}/{app}/{collection}?ql={ql}&access_token={access_token}&limit={limit}"
-get_entity_url_template = "{protocol}://{host}/{org}/{app}/{collection}/{uuid}?access_token={access_token}&connections=none"
-put_entity_url_template = "{protocol}://{host}/{org}/{app}/{collection}/{uuid}?access_token={access_token}"
+token_url_template = "{api_url}/management/token"
+org_management_url_template = "{api_url}/management/organizations/{org}/applications?access_token={access_token}"
+org_url_template = "{api_url}/{org}?access_token={access_token}"
+app_url_template = "{api_url}/{org}/{app}?access_token={access_token}"
+collection_url_template = "{api_url}/{org}/{app}/{collection}?access_token={access_token}"
+collection_query_url_template = "{api_url}/{org}/{app}/{collection}?ql={ql}&access_token={access_token}&limit={limit}"
+get_entity_url_template = "{api_url}/{org}/{app}/{collection}/{uuid}?access_token={access_token}&connections=none"
+put_entity_url_template = "{api_url}/{org}/{app}/{collection}/{uuid}?access_token={access_token}"
 
 # config can be loaded from a file
 config = {}
@@ -48,16 +48,13 @@ config = {}
 # config = {
 #     "regions": {
 #         "us_west": {
-#             "protocol": "http",
-#             "host": "rut040wo:8080"
+#             "api_url": "http://rut040wo:8080"
 #         },
 #         "us_east": {
-#             "protocol": "http",
-#             "host": "rut154ea:8080"
+#             "api_url": "http://rut154ea:8080"
 #         },
 #         "eu_west": {
-#             "protocol": "http",
-#             "host": "localhost:9090"
+#             "api_url": "http://localhost:8080"
 #         }
 #     },
 #     "management_region_id": "us_west",
