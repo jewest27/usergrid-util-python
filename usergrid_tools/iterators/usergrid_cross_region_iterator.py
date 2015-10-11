@@ -1,4 +1,4 @@
-from UsergridQuery import UsergridQuery
+from usergrid import UsergridQuery
 
 __author__ = 'Jeff West @ ApigeeCorporation'
 
@@ -31,7 +31,7 @@ urllib3.contrib.pyopenssl.inject_into_urllib3()
 # you should spin up another Tomcat, leaving 2+ in the ELB for a given customer.
 
 
-logger = logging.getLogger('CrossRegionRepair')
+logger = logging.getLogger('UsergridCrossRegionRepair')
 
 token_url_template = "{api_url}/management/token"
 org_management_url_template = "{api_url}/management/organizations/{org}/applications?access_token={access_token}"

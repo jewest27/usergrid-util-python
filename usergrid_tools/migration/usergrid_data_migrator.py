@@ -8,6 +8,7 @@ import requests
 import traceback
 from logging.handlers import RotatingFileHandler
 import time
+from usergrid import UsergridQuery
 
 __author__ = 'Jeff West @ ApigeeCorporation'
 
@@ -357,80 +358,24 @@ def main():
                     continue
 
                 logger.warning('Processing collection=%s' % collection_name)
-
                 counter = 0
-
-                top_flag = True
 
                 source_collection_url = collection_query_url_template.format(org=config.get('org'),
                                                                              app=app,
                                                                              collection=collection_name,
                                                                              ql=config.get('ql', 'select *'),
                                                                              **config.get('source_endpoint'))
-                logger.info('GET ' + source_collection_url)
 
-                r = requests.get(source_collection_url, verify=False)
+                q = UsergridQuery(source_collection_url)
 
-                logger.info('GET (%s) [%s] on URL=%s' % (r.elapsed, r.status_code, source_collection_url))
+                try:
+                    for entity in q:
+                        counter += 1
+                        queue.put((app, collection_name, entity))
 
-                response = r.json()
-
-                while top_flag:
-
-                    try:
-                        entities = response.get('entities', [])
-                        counter += len(entities)
-
-                        logger.info('Retrieved [%s] entities | Collection=[%s] counter=[%s]' % (
-                            len(entities), collection_name, counter))
-
-                        for entity in entities:
-                            queue.put((app, collection_name, entity))
-
-                        if 'cursor' not in response:
-                            logger.warning(
-                                'no cursor in response, stopping iteration on Collection=[%s] counter=[%s]' % (
-                                    collection_name, counter))
-                            break
-
-                        cursor = response.get('cursor')
-                        logger.debug('cursor: %s' % cursor)
-
-                        cursor_url = source_collection_url + '&cursor=%s' % cursor
-
-                        proceed = False
-
-                        while not proceed:
-                            try:
-                                logger.info('GET ' + cursor_url)
-
-                                r = requests.get(cursor_url, verify=False)
-
-                                logger.info(
-                                    'GET (%s) [%s] on URL=%s' % (r.elapsed, r.status_code, cursor_url))
-
-                                if r.status_code == 200:
-                                    response = r.json()
-                                    proceed = True
-                                else:
-                                    logger.error('[%s]: GET %s' % (r.status_code, cursor_url))
-                                    logger.error('Failed getting next page: [%s]: %s' % (r.status_code, r.text))
-                                    logger.warn('Sleeping 10s...')
-                                    time.sleep(10)
-
-                            except KeyboardInterrupt, e:
-                                raise e
-
-                            except:
-                                logger.error(traceback.format_exc())
-                                print traceback.format_exc()
-
-                        logger.debug('proceeding...')
-
-                    except KeyboardInterrupt:
-                        top_flag = False
-                        logger.warning('Keyboard Interrupt, aborting...')
-                        [w.terminate() for w in workers]
+                except KeyboardInterrupt:
+                    logger.warning('Keyboard Interrupt, aborting...')
+                    [w.terminate() for w in workers]
 
         logger.info('DONE!')
 

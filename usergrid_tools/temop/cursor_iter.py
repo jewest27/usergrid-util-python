@@ -7,7 +7,7 @@ import sys
 from multiprocessing import Queue, Process
 import datetime
 from logging.handlers import RotatingFileHandler
-from UsergridQuery import UsergridQuery
+from usergrid import UsergridQuery
 
 __author__ = 'Jeff West @ ApigeeCorporation'
 
@@ -190,6 +190,7 @@ def main():
     print url
 
     q = UsergridQuery(url)
+
     print 'done'
 
     for e in q:
