@@ -427,7 +427,7 @@ class UsergridIterator:
                           max_empty_count=config.get('max_empty_count', 3),
                           queue_timeout=config.get('queue_timeout', 10))
 
-                   for x in xrange(config.get('workers'))]
+                   for x in xrange(config.get('workers', 1))]
 
         [w.start() for w in workers]
 
