@@ -4,66 +4,8 @@ import datetime
 import requests
 import time
 
-data = [
-    {
-        "id": "001",
-        "dataType": "entitlements",
-        "mockData": [
-            {"importDate": "2015-08-25T23:33:57.124Z", "rowsImported": 2},
-            {"role": "line-owner", "route": "/master", "element": "element1", "entitlementId": "entitlement4",
-             "property": "show"},
-            {"role": "line-owner", "route": "/master", "element": "element2", "entitlementId": "entitlement8",
-             "property": "hide"}
-        ]
-    },
-    {
-        "id": "002",
-        "dataType": "entitlements",
-        "mockData": [
-            {"importDate": "2015-08-25T23:33:57.124Z", "rowsImported": 2},
-            {"role": "line-owner", "route": "/master", "element": "element1", "entitlementId": "entitlement4",
-             "property": "show"},
-            {"role": "line-owner", "route": "/master", "element": "element2", "entitlementId": "entitlement8",
-             "property": "hide"}
-        ]
-    },
-    {
-        "id": "003",
-        "dataType": "entitlements",
-        "mockData": [
-            {"importDate": "2015-08-25T23:33:57.124Z", "rowsImported": 2},
-            {"role": "line-owner", "route": "/master", "element": "element1", "entitlementId": "entitlement4",
-             "property": "show"},
-            {"role": "line-owner", "route": "/master", "element": "element2", "entitlementId": "entitlement8",
-             "property": "hide"}
-        ]
-    },
-    {
-        "id": "004",
-        "dataType": "entitlements",
-        "mockData": [
-            {"importDate": "2015-08-25T23:33:57.124Z", "rowsImported": 2},
-            {"role": "line-owner", "route": "/master", "element": "element1", "entitlementId": "entitlement4",
-             "property": "show"},
-            {"role": "line-owner", "route": "/master", "element": "element2", "entitlementId": "entitlement8",
-             "property": "hide"}
-        ]
-    },
-    {
-        "id": "005",
-        "dataType": "entitlements",
-        "mockData": [
-            {"importDate": "2015-08-25T23:33:57.124Z", "rowsImported": 2},
-            {"role": "line-owner", "route": "/master", "element": "element1", "entitlementId": "entitlement4",
-             "property": "show"},
-            {"role": "line-owner", "route": "/master", "element": "element2", "entitlementId": "entitlement8",
-             "property": "hide"}
-        ]
-    }
-]
-
 entity_template = {
-    "id": "005",
+    "id": "replaced",
     "dataType": "entitlements",
     "mockData": [
         {"importDate": "2015-08-25T23:33:57.124Z", "rowsImported": 2},
@@ -74,10 +16,10 @@ entity_template = {
     ]
 }
 
-url_template = 'https://usergrid-e2e-prod.e2e.apigee.net/appservices-2-1/{org}/{app}/{collection}'
-
+url_template = '{api_url}/{org}/{app}/{collection}'
 url_data = {
-    'org': 'jwest-test',
+    'api_url': 'https://api.usergrid.com',
+    'org': 'myorg',
     'app': 'sandbox',
     'collection': datetime.datetime.now().strftime('%yx%mx%dx%Hx%Mx%S')
 }
@@ -97,18 +39,15 @@ def create_entity(entity):
     return uuid, entity
 
 
-processes = Pool(32)
-
-
-def test_multiple(x=10):
+def test_multiple(number_of_entities=10):
     global processes
     start = datetime.datetime.now()
 
-    print 'Creating %s entities w/ url=%s' % (x, url)
+    print 'Creating %s entities w/ url=%s' % (number_of_entities, url)
     created_map = {}
     entities = []
 
-    for x in xrange(1, x + 1):
+    for x in xrange(1, number_of_entities + 1):
         entity = entity_template.copy()
         entity['id'] = str(x)
         entities.append(entity)
@@ -121,21 +60,7 @@ def test_multiple(x=10):
 
     stop = datetime.datetime.now()
 
-    print 'Created [%s] entities in %s' % (x, (stop - start))
-
-    return created_map
-
-
-def test_array():
-    created_map = {}
-
-    for datum in data:
-        r = requests.post(url, data=json.dumps(datum))
-
-        entities = r.json().get('entities', [])
-        uuid = entities[0].get('uuid')
-        print '%s: %s' % (r.status_code, uuid)
-        created_map[uuid] = entities[0]
+    print 'Created [%s] entities in %s' % (number_of_entities, (stop - start))
 
     return created_map
 
@@ -173,9 +98,9 @@ def test_created(created_map, q_url, sleep_time=0.0):
     print 'All entities found after %s' % (stop - start)
 
 
-def clear(url):
-    print 'deleting.... ' + url
-    r = requests.delete(url)
+def clear(clear_url):
+    print 'deleting.... ' + clear_url
+    r = requests.delete(clear_url)
 
     if r.status_code != 200:
         print 'error deleting!'
@@ -201,24 +126,27 @@ def test_cleared(q_url):
             print 'DID NOT CLEAR'
 
 
-try:
-    url_data = {
-        'org': 'jwest-test',
-        'app': 'sandbox',
-        'collection': datetime.datetime.now().strftime('%yx%mx%dx%Hx%Mx%S')
-    }
+processes = Pool(32)
 
-    url = url_template.format(**url_data)
 
-    q_url = url + "?ql=select * where dataType='entitlements'&limit=1000"
+def main():
+    global url
 
-    created_map = test_multiple(999)
+    try:
+        q_url = url + "?ql=select * where dataType='entitlements'&limit=1000"
 
-    test_created(created_map, q_url, 1)
+        created_map = test_multiple(999)
 
-    clear(q_url)
+        test_created(created_map=created_map,
+                     q_url=q_url,
+                     sleep_time=1)
 
-except KeyboardInterrupt:
+        clear(clear_url=q_url)
+
+    except KeyboardInterrupt:
+        processes.terminate()
+
     processes.terminate()
 
-processes.terminate()
+
+main()
