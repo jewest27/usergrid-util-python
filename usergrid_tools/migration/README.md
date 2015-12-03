@@ -1,5 +1,9 @@
 # Usergrid Data Migrator
 
+## Prerequisites
+
+Install the Usergrid Python SDK: https://github.com/jwest-apigee/usergrid-python
+
 ## Overview
 The purpose of this document is to provide an overview of the Python Script provided in the same directory which allows you to migrate data, connections and users from one Usergrid platform / org / app to another.  This can be used in the upgrade process from Usergrid 1.0 to 2.x since there is no upgrade path.
 

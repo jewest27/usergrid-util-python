@@ -49,7 +49,6 @@ org_management_url_template = "{api_url}/management/organizations/{org}/applicat
 org_url_template = "{api_url}/{org}?client_id={client_id}&client_secret={client_secret}"
 app_url_template = "{api_url}/{org}/{app}?client_id={client_id}&client_secret={client_secret}"
 collection_url_template = "{api_url}/{org}/{app}/{collection}?client_id={client_id}&client_secret={client_secret}"
-collection_query_url_template = "{api_url}/{org}/{app}/{collection}?ql={ql}&client_id={client_id}&client_secret={client_secret}&limit={limit}"
 collection_graph_url_template = "{api_url}/{org}/{app}/{collection}?client_id={client_id}&client_secret={client_secret}&limit={limit}"
 connection_query_url_template = "{api_url}/{org}/{app}/{collection}/{uuid}/{verb}?client_id={client_id}&client_secret={client_secret}&limit={limit}"
 connection_create_url_template = "{api_url}/{org}/{app}/{collection}/{uuid}/{verb}/{target_uuid}?client_id={client_id}&client_secret={client_secret}"
@@ -60,7 +59,7 @@ put_entity_url_template = "{api_url}/{org}/{app}/{collection}/{uuid}?client_id={
 
 user_credentials_url_template = "{api_url}/{org}/{app}/users/{uuid}/credentials?client_id={client_id}&client_secret={client_secret}"
 
-ignore_collections = ['activities', 'queues', 'events', 'notifications']
+ignore_collections = ['activities', 'queues', 'events']
 
 
 class Worker(Process):
@@ -97,7 +96,8 @@ class Worker(Process):
                 logger.warning('EMPTY! Count=%s' % empty_count)
 
                 empty_count += 1
-                if empty_count < 10:
+
+                if empty_count < 100:
                     keep_going = False
 
 
@@ -340,7 +340,7 @@ def parse_args():
     parser.add_argument('-w', '--workers',
                         help='The number of worker processes to do the migration',
                         type=int,
-                        default=16)
+                        default=32)
 
     parser.add_argument('--ql',
                         help='The QL to use in the filter for reading data from collections',
@@ -523,8 +523,8 @@ def main():
 
         # sometimes this call was not working so I put it in a loop to force it...
         while r_collections.status_code != 200:
-            logger.warning('FAILED: GET (%s) [%s] URL: %s' % (r_collections.elapsed, r_collections.status_code,
-                           source_app_url))
+            logger.warning('FAILED: GET (%s) [%s] URL: %s' % r_collections.elapsed, r_collections.status_code,
+                           source_app_url)
             time.sleep(5)
             r_collections = requests.get(source_app_url)
 
@@ -552,10 +552,9 @@ def main():
                 logger.info('Processing collection=%s' % collection_name)
                 counter = 0
 
-                source_collection_url = collection_query_url_template.format(org=config.get('org'),
+                source_collection_url = collection_graph_url_template.format(org=config.get('org'),
                                                                              app=app,
                                                                              collection=collection_name,
-                                                                             ql=config.get('ql'),
                                                                              **config.get('source_endpoint'))
 
                 # use the UsergridQuery from the Python SDK to iterate the collection
