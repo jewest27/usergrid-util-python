@@ -50,7 +50,7 @@ def init_logging(stdout_enabled=True):
     log_file_name = './migrator.log'
     rotating_file = logging.handlers.RotatingFileHandler(filename=log_file_name,
                                                          mode='a',
-                                                         maxBytes=2048576000,
+                                                         maxBytes=204857600,
                                                          backupCount=10)
     rotating_file.setFormatter(log_formatter)
     rotating_file.setLevel(logging.INFO)
@@ -62,7 +62,7 @@ def init_logging(stdout_enabled=True):
     error_log_file_name = './migrator_errors.log'
     error_rotating_file = logging.handlers.RotatingFileHandler(filename=error_log_file_name,
                                                                mode='a',
-                                                               maxBytes=2048576000,
+                                                               maxBytes=204857600,
                                                                backupCount=10)
     error_rotating_file.setFormatter(log_formatter)
     error_rotating_file.setLevel(logging.ERROR)
@@ -74,7 +74,7 @@ def init_logging(stdout_enabled=True):
     audit_log_file_name = './migrator_audit.log'
     audit_rotating_file = logging.handlers.RotatingFileHandler(filename=audit_log_file_name,
                                                                mode='a',
-                                                               maxBytes=2048576000,
+                                                               maxBytes=204857000,
                                                                backupCount=10)
     audit_rotating_file.setFormatter(log_formatter)
     audit_rotating_file.setLevel(logging.WARNING)
@@ -86,7 +86,7 @@ def init_logging(stdout_enabled=True):
     data_log_file_name = './migrator_data.log'
     data_rotating_file = logging.handlers.RotatingFileHandler(filename=data_log_file_name,
                                                               mode='a',
-                                                              maxBytes=2048576000,
+                                                              maxBytes=204857600,
                                                               backupCount=10)
     data_rotating_file.setFormatter(log_formatter)
     data_rotating_file.setLevel(logging.WARNING)
@@ -98,7 +98,7 @@ def init_logging(stdout_enabled=True):
     connections_log_file_name = './migrator_connections.log'
     connections_rotating_file = logging.handlers.RotatingFileHandler(filename=connections_log_file_name,
                                                                      mode='a',
-                                                                     maxBytes=2048576000,
+                                                                     maxBytes=204857600,
                                                                      backupCount=10)
     connections_rotating_file.setFormatter(log_formatter)
     connections_rotating_file.setLevel(logging.WARNING)
@@ -110,7 +110,7 @@ def init_logging(stdout_enabled=True):
     credential_log_file_name = './migrator_credentials.log'
     credentials_rotating_file = logging.handlers.RotatingFileHandler(filename=credential_log_file_name,
                                                                      mode='a',
-                                                                     maxBytes=2048576000,
+                                                                     maxBytes=204857600,
                                                                      backupCount=10)
     credentials_rotating_file.setFormatter(log_formatter)
     credentials_rotating_file.setLevel(logging.WARNING)
@@ -157,11 +157,13 @@ class Worker(Process):
         keep_going = True
 
         count_processed = 0
+        empty_count = 0
 
         while keep_going:
-            empty_count = 0
+
             try:
                 app, collection_name, entity = self.queue.get(timeout=60)
+                empty_count = 0
 
                 if self.handler_function is not None:
                     processed = self.handler_function(app, collection_name, entity)
@@ -203,18 +205,20 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
 
         count_edge_names = len(connections)
 
-        connection_logger.info(
-                'Processing [%s] connections of entity [%s/%s/%s]' % (
-                    count_edge_names, target_app, collection_name, source_uuid))
+        connection_logger.debug('Processing [%s] connection types of entity [%s/%s/%s]' % (
+            count_edge_names, target_app, collection_name, source_uuid))
 
         for connection_name in connections:
 
-            if connection_name in ['feed', 'activities']:
+            if collection_name == 'users' and connection_name in ['roles', 'followers', 'groups', 'feed', 'activities']:
+                # feed and activities are not retrievable...
+                # roles and groups will be more efficiently handled from the role/group -> user
+                # followers will be handled by 'following'
                 continue
 
-            connection_logger.info(
-                    'Processing connections [%s] of entity [%s/%s/%s]' % (
-                        connection_name, app, collection_name, source_uuid))
+            connection_logger.debug('Processing connections [%s] of entity [%s/%s/%s]' % (
+                connection_name, app, collection_name, source_uuid))
+
             connection_query_url = connection_query_url_template.format(
                     org=config.get('org'),
                     app=app,
@@ -245,13 +249,14 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
                 create_connection_url = connection_create_url_template.format(
                         org=target_org,
                         app=target_app,
-                        verb=connection_name,
                         collection=target_collection,
                         uuid=source_uuid,
+                        verb=connection_name,
                         target_uuid=e_connection.get('uuid'),
                         **config.get('target_endpoint'))
 
                 connection_logger.info('CREATE: ' + create_connection_url)
+
                 attempts = 0
 
                 while attempts < 5:
@@ -272,9 +277,8 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
                             time.sleep(DEFAULT_RETRY_SLEEP)
                         else:
                             response = False
-                            connection_logger.critical(
-                                    'WILL NOT RETRY: FAILED to create connection at URL=[%s]: %s' % (
-                                        create_connection_url, r_create.text))
+                            connection_logger.critical('WILL NOT RETRY: FAILED to create connection at URL=[%s]: %s' % (
+                                create_connection_url, r_create.text))
 
         response = True
 
@@ -283,7 +287,7 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
         connection_logger.critical(
                 'error in migrate_connections on entity: \n %s' % json.dumps(source_entity, indent=2))
 
-    if (count_edges + count_edge_names) > 0:
+    if count_edges > 0:
         connection_logger.info(
                 'migrate_connections | success=[%s] | entity = %s/%s/%s | edge_types=[%s] | edges=[%s]' % (
                     response, app, collection_name, source_entity.get('uuid'), count_edge_names, count_edges))
@@ -361,12 +365,12 @@ def confirm_user_entity(app, source_entity, attempts=0):
 
         if retrieved_entity.get('uuid') != source_entity.get('uuid'):
             logger.info(
-                    'UUID of Source Entity [%s] differs from uuid [%s] of retrieved entity at URL=[%s] and will be substituted...' % (
+                    'UUID of Source Entity [%s] differs from uuid [%s] of retrieved entity at URL=[%s] and will be substituted' % (
                         source_entity.get('uuid'), retrieved_entity.get('uuid'), source_entity_url))
 
         return retrieved_entity
 
-    elif r.status_code == 404 or (r.status_code == 401 and 'service_resource_not_found' in r.text):
+    elif 'service_resource_not_found' in r.text:
 
         logger.warn('Unable to retrieve user at URL [%s], and will use source entity.  status=[%s] response: %s...' % (
             source_entity_url, r.status_code, r.text))
@@ -397,80 +401,39 @@ def migrate_data(app, collection_name, source_entity, attempts=0):
     target_app, target_collection, target_org = get_target_mapping(app, collection_name)
 
     try:
-        target_entity_url = put_entity_url_template.format(org=target_org,
-                                                           app=target_app,
-                                                           collection=target_collection,
-                                                           uuid=source_entity.get('uuid'),
-                                                           **config.get('target_endpoint'))
+        target_entity_url_by_name = put_entity_url_template.format(org=target_org,
+                                                                   app=target_app,
+                                                                   collection=target_collection,
+                                                                   uuid=source_entity.get('uuid'),
+                                                                   **config.get('target_endpoint'))
 
         if attempts >= 5:
-            logger.critical('Aborting after [%s] attempts to audit entity [%s/%s] at URL [%s]' % (
-                attempts, collection_name, source_entity.get('uuid'), target_entity_url))
+            data_logger.critical('ABORT migrate_data | success=[%s] | attempts=[%s] | created=[%s] %s/%s/%s' % (
+                True, attempts, source_entity.get('created'), app, collection_name, source_entity.get('uuid')))
+
             return False
 
-        r = requests.put(url=target_entity_url, data=json.dumps(source_entity))
+        logger.info('Attempt [%s] to migrate entity [%s/%s] at URL [%s]' % (
+            attempts, collection_name, source_entity.get('uuid'), target_entity_url_by_name))
+
+        r = requests.put(url=target_entity_url_by_name, data=json.dumps(source_entity))
 
         if r.status_code == 200:
             # Worked => WE ARE DONE
-            data_logger.info('migrate_data | success=[%s] | created=[%s] %s/%s/%s' % (
-                response, source_entity.get('created'), app, collection_name, source_entity.get('uuid')))
+            data_logger.info('migrate_data | success=[%s] | attempts=[%s] | created=[%s] %s/%s/%s' % (
+                True, attempts, source_entity.get('created'), app, collection_name, source_entity.get('uuid')))
 
             return True
 
-        elif r.status_code == 400 and target_collection in ['users', 'roles']:
+        elif r.status_code == 400 and target_collection in ['roles']:
+            repair_user_role(app, collection_name, source_entity)
 
-            # For the users collection, there seemed to be cases where a USERNAME was created/existing with the a
-            # different UUID which caused a 'collision' - so the point is to delete the entity with the differing
-            # UUID by UUID and then do a recursive call to migrate the data - now that the collision has been cleared
-
-            if target_collection == 'users':
-                target_name = source_entity.get('username')
-            elif target_collection == 'roles':
-                target_name = source_entity.get('name')
-            else:
-                target_name = source_entity.get('uuid')
-
-            target_entity_url = get_entity_url_template.format(org=target_org,
-                                                               app=target_app,
-                                                               collection=target_collection,
-                                                               uuid=target_name,
-                                                               **config.get('target_endpoint'))
-
-            data_logger.warning('Checking UUID of entity at URL=[%s] due to collision...' % target_entity_url)
-
-            r = requests.get(target_entity_url)
-
-            if r.status_code == 200:
-                collision_entity = r.json().get('entities', [{'uuid': 'error'}])[0]
-
-                if source_entity.get('uuid') is not None and source_entity.get('uuid') != collision_entity.get('uuid'):
-                    data_logger.info('Differing UUIDs for target_name=[%s] - source=[%s] / target=[%s]' % (
-                        target_name, source_entity.get('uuid'), collision_entity.get('uuid')))
-
-                else:
-                    data_logger.info('UUIDs ARE THE SAME for target_name=[%s] - source=[%s] / target=[%s]' % (
-                        target_name, source_entity.get('uuid'), collision_entity.get('uuid')))
-
-            data_logger.warning('Deleting entity at URL=[%s] due to collision...' % target_entity_url)
-
-            r = requests.delete(target_entity_url)
-
-            if r.status_code == 200:
-
-                # allow some time for processing
-                time.sleep(DEFAULT_PROCESSING_SLEEP)
-
-                # After deleting the target entity, migrating the data should succeed
-                return migrate_data(app, collection_name, source_entity, attempts)
-
-            else:
-                # log an error and keep going if we cannot delete the entity at the specified URL.  Unlikely, but if so
-                # then this entity is borked
-                data_logger.critical('Deletion of entity at URL=[%s] FAILED!...' % target_entity_url)
+        elif r.status_code == 400 and target_collection in ['users']:
+            return audit_user(app, collection_name, source_entity)
 
         else:
             data_logger.error('Failure [%s] on attempt [%s] to PUT url=[%s], entity=[%s] response=[%s]' % (
-                r.status_code, attempts, target_entity_url, json.dumps(source_entity), r.text))
+                r.status_code, attempts, target_entity_url_by_name, json.dumps(source_entity), r.text))
 
     except:
         data_logger.error(traceback.format_exc())
@@ -481,7 +444,7 @@ def migrate_data(app, collection_name, source_entity, attempts=0):
 
 def audit_data(app, collection_name, source_entity, attempts=0):
     if collection_name == 'users':
-        source_entity = confirm_user_entity(app, source_entity)
+        return audit_user(app, collection_name, source_entity, attempts)
 
     # simple process - check the target org/app/collection/{uuid|name} to see if it exists.
     # If it exists, move on.  If not, and repair is enabled then attempt to migrate it now and reattempt audit
@@ -500,7 +463,7 @@ def audit_data(app, collection_name, source_entity, attempts=0):
 
     # short circuit after 5 attempts
     if attempts >= 5:
-        logger.critical('Aborting after [%s] attempts to audit entity [%s/%s] at URL [%s]' % (
+        logger.critical('ABORT after [%s] attempts to audit entity [%s/%s] at URL [%s]' % (
             attempts, collection_name, source_entity.get('uuid'), target_entity_url))
         return False
 
@@ -514,6 +477,7 @@ def audit_data(app, collection_name, source_entity, attempts=0):
 
         # if repaid is enabled, attempt to migrate the data followed by an audit
         if config.get('repair', False):
+
             response = migrate_data(app, collection_name, source_entity, attempts=0)
 
             if response:
@@ -525,7 +489,7 @@ def audit_data(app, collection_name, source_entity, attempts=0):
 
             else:
                 audit_logger.critical(
-                        'AUDIT: FINAL Failure after attempted migration and entity not found on attempt [%s] at TARGET URL=[%s] - [%s]: %s' % (
+                        'AUDIT: ABORT after attempted migration and entity not found on attempt [%s] at TARGET URL=[%s] - [%s]: %s' % (
                             attempts, target_entity_url, r.status_code, r.text))
 
     return audit_data(app, collection_name, source_entity, attempts)
@@ -536,19 +500,20 @@ def audit_user(app, collection_name, source_entity, attempts=0):
         return False
 
     attempts += 1
-
+    username = source_entity.get('username')
     target_app, target_collection, target_org = get_target_mapping(app, collection_name)
 
     target_entity_url = get_entity_url_template.format(org=target_org,
                                                        app=target_app,
                                                        collection=target_collection,
-                                                       uuid=source_entity.get('username'),
+                                                       uuid=username,
                                                        **config.get('target_endpoint'))
 
     # There is retry build in, here is the short circuit
     if attempts >= 5:
-        logger.critical('Aborting after [%s] attempts to audit user [%s] at URL [%s]' % (
-            attempts, source_entity.get('username'), target_entity_url))
+        logger.critical(
+                'Aborting after [%s] attempts to audit user [%s] at URL [%s]' % (attempts, username, target_entity_url))
+
         return False
 
     r = requests.get(url=target_entity_url)
@@ -559,159 +524,175 @@ def audit_user(app, collection_name, source_entity, attempts=0):
     # If the created date of the target is after the created date of the source, then overwrite it with the entity in
     # the parameters
 
+    if r.status_code != 200:
+        audit_logger.info(
+                'Failed attempt [%s] to GET [%s] URL=[%s]: %s' % (attempts, r.status_code, target_entity_url, r.text))
+
     if r.status_code == 200:
         target_entity = r.json().get('entities')[0]
 
-        if target_entity.get('uuid') == source_entity.get('uuid'):
-            # UUIDs match, audit complete
+        best_source_entity = get_best_source_entity(app, collection_name, source_entity)
+
+        # compare uuids to make sure they match
+
+        if target_entity.get('uuid') == best_source_entity.get('uuid') or target_entity.get(
+                'created') <= best_source_entity.get('created'):
+
+            if target_entity.get('uuid') != best_source_entity.get('uuid'):
+                # UUIDs match and/or created at target is less than best we know of, audit complete
+                audit_logger.info('GOOD user [%s] best/source UUID/created=[%s/%s] target UUID/created [%s/%s]' % (
+                    username, best_source_entity.get('uuid'), best_source_entity.get('created'),
+                    target_entity.get('uuid'),
+                    target_entity.get('created')))
+
             return True
 
-        elif target_entity.get('created') > source_entity.get('created'):
-            # update the target with the source entity, since the source is older
-            response = migrate_data(app, collection_name, source_entity, attempts=0)
+        else:
+            audit_logger.warn('Repairing user [%s] best/source UUID/created=[%s/%s] target UUID/created [%s/%s]' % (
+                username, best_source_entity.get('uuid'), best_source_entity.get('created'), target_entity.get('uuid'),
+                target_entity.get('created')))
 
-            if response:
-                # after the data is migrated, sleep for processing time
-                time.sleep(DEFAULT_PROCESSING_SLEEP)
+            return repair_user_role(app, collection_name, source_entity)
 
-                # attempt to audit the entity again
-                return audit_data(app, collection_name, source_entity, attempts)
+    elif r.status_code / 100 == 4:
+        audit_logger.info('AUDIT: HTTP [%s] on URL=[%s]: %s' % (r.status_code, target_entity_url, r.text))
 
-            else:
-                audit_logger.critical(
-                        'AUDIT: Repair=[%s] Entity not migrated on attempt [%s] at TARGET URL=[%s] - [%s]: %s' % (
-                            config.get('repair'), attempts, target_entity_url, r.status_code, r.text))
+        return repair_user_role(app, collection_name, source_entity)
 
     else:
-        audit_logger.warning('AUDIT: Repair=[%s] Entity not retrieved on attempt [%s] at TARGET URL=[%s] - [%s]: %s' % (
-            config.get('repair'), attempts, target_entity_url, r.status_code, r.text))
+        audit_logger.warning('AUDIT: Failed attempt [%s] GET [%s] on TARGET URL=[%s] - : %s' % (
+            attempts, r.status_code, target_entity_url, r.text))
 
-        if config.get('repair', False):
-            response = migrate_data(app, collection_name, source_entity, attempts=0)
+        time.sleep(DEFAULT_RETRY_SLEEP)
 
-            if response:
-                time.sleep(DEFAULT_PROCESSING_SLEEP)
-                return audit_data(app, collection_name, source_entity, attempts)
-
-            else:
-                audit_logger.critical(
-                        'AUDIT: FINAL Failure after attempted migration and entity not found on attempt [%s] at TARGET URL=[%s] - [%s]: %s' % (
-                            attempts, target_entity_url, r.status_code, r.text))
-                return False
-
-    return audit_data(app, collection_name, source_entity, attempts)
+        return audit_data(app, collection_name, source_entity, attempts)
 
 
-def audit_connections(app, collection_name, source_entity, attempts=0):
-    # TODO IMPLEMENT - this is a copy paste of the migration code
+def get_best_source_entity(app, collection_name, source_entity):
+    target_app, target_collection, target_org = get_target_mapping(app, collection_name)
 
-    attempts += 1
-    response = False
+    target_pk = 'uuid'
+
+    if target_collection == 'users':
+        target_pk = 'username'
+    elif target_collection == 'roles':
+        target_pk = 'name'
+
+    target_name = source_entity.get(target_pk)
+
+    # there should be no target entity now, we just need to decide which one from the source to use
+    source_entity_url_by_name = get_entity_url_template.format(org=config.get('org'),
+                                                               app=app,
+                                                               collection=collection_name,
+                                                               uuid=target_name,
+                                                               **config.get('source_endpoint'))
+
+    r_get_source_entity = requests.get(source_entity_url_by_name)
+
+    # if we are able to get at the source by PK...
+    if r_get_source_entity.status_code == 200:
+
+        # extract the entity from the response
+        entity_from_get = r_get_source_entity.json().get('entities')[0]
+
+        return entity_from_get
+
+    elif r_get_source_entity.status_code / 100 == 4:
+        # wasn't found, get by QL and sort
+        source_entity_query_url = collection_query_url_template.format(org=config.get('org'),
+                                                                       app=app,
+                                                                       collection=collection_name,
+                                                                       ql='select * where %s=\'%s\' order by created asc' % (
+                                                                           target_pk, target_name),
+                                                                       **config.get('source_endpoint'))
+
+        data_logger.info('Attempting to determine best entity from query on URL %s' % source_entity_query_url)
+
+        q = UsergridQuery(source_entity_query_url)
+
+        desired_entity = None
+
+        entity_counter = 0
+
+        for e in q:
+            entity_counter += 1
+
+            if desired_entity is None:
+                desired_entity = e
+
+            elif e.get('created') < desired_entity.get('created'):
+                desired_entity = e
+
+        if desired_entity is None:
+            data_logger.warn('Unable to determine best of [%s] entities from query on URL %s' % (
+                entity_counter, source_entity_query_url))
+
+            return source_entity
+
+        else:
+            return desired_entity
+
+    else:
+        return source_entity
+
+
+def repair_user_role(app, collection_name, source_entity, attempts=0):
+    if not config.get('repair', False):
+        return False
 
     target_app, target_collection, target_org = get_target_mapping(app, collection_name)
 
-    source_uuid = source_entity.get('uuid')
-    count_edges = 0
-    count_edge_names = 0
+    # For the users collection, there seemed to be cases where a USERNAME was created/existing with the a
+    # different UUID which caused a 'collision' - so the point is to delete the entity with the differing
+    # UUID by UUID and then do a recursive call to migrate the data - now that the collision has been cleared
 
-    try:
-        connections = source_entity.get('metadata', {}).get('collections', {})
+    target_pk = 'uuid'
 
-        count_edge_names = len(connections)
+    if target_collection == 'users':
+        target_pk = 'username'
+    elif target_collection == 'roles':
+        target_pk = 'name'
 
-        logger.info('Processing [%s] edge types of entity [%s/%s/%s]' % (
-            count_edge_names, target_app, collection_name, source_uuid))
+    target_name = source_entity.get(target_pk)
 
-        edges_to_include = config.get('edges', [])
+    target_entity_url_by_name = get_entity_url_template.format(org=target_org,
+                                                               app=target_app,
+                                                               collection=target_collection,
+                                                               uuid=target_name,
+                                                               **config.get('target_endpoint'))
 
-        for connection_name in connections:
+    data_logger.warning('Repairing: Deleting name=[%s] entity at URL=[%s]' % (target_name, target_entity_url_by_name))
 
-            if connection_name in ['feed', 'activities']:
-                continue
+    r = requests.delete(target_entity_url_by_name)
 
-            if len(edges_to_include) > 0 and connection_name not in edges_to_include:
-                logger.warn('SKIPPING unspecified edge type=[%s] of entity [%s/%s/%s]' % (
-                    connection_name, app, collection_name, source_uuid))
+    if r.status_code == 200 or (r.status_code in [404, 401] and 'service_resource_not_found' in r.text):
+        data_logger.info('Deletion of entity at URL=[%s] was [%s]' % (target_entity_url_by_name, r.status_code))
 
-            logger.info('Processing connections edge=[%s] of entity [%s/%s/%s]' % (
-                connection_name, app, collection_name, source_uuid))
+        best_source_entity = get_best_source_entity(app, collection_name, source_entity)
 
-            connection_query_url = connection_query_url_template.format(
-                    org=config.get('org'),
-                    app=app,
-                    verb=connection_name,
-                    collection=collection_name,
-                    uuid=source_uuid,
-                    **config.get('source_endpoint'))
+        target_entity_url_by_uuid = get_entity_url_template.format(org=target_org,
+                                                                   app=target_app,
+                                                                   collection=target_collection,
+                                                                   uuid=best_source_entity.get('uuid'),
+                                                                   **config.get('target_endpoint'))
 
-            connection_query = UsergridQuery(connection_query_url)
+        r = requests.put(target_entity_url_by_uuid, data=json.dumps(best_source_entity))
 
-            connection_stack = []
+        if r.status_code == 200:
+            data_logger.info('Successfully repaired user at URL=[%s]' % target_entity_url_by_uuid)
+            return True
 
-            target_connection_collection = config.get('collection_mapping', {}).get(e_connection.get('type'),
-                                                                                    e_connection.get('type'))
-            try:
-                for e_connection in connection_query:
-                    logger.info('Connecting entity [%s/%s/%s] --[%s]--> [%s/%s/%s]' % (
-                        app, collection_name, source_uuid, connection_name, target_app, target_connection_collection,
-                        e_connection.get('uuid')))
+        else:
+            data_logger.critical('Failed to PUT [%s] the desired entity  at URL=[%s]: %s' % (
+                r.status_code, target_entity_url_by_name, r.text))
+            return False
 
-                    count_edges += 1
-
-                    connection_stack.append(e_connection)
-            except:
-                connection_logger.error('Error processing connection query url=[%s]: %s' % (
-                    connection_query_url, traceback.format_exc()))
-
-            while len(connection_stack) > 0:
-
-                e_connection = connection_stack.pop()
-
-                create_connection_url = connection_create_url_template.format(
-                        org=target_org,
-                        app=target_app,
-                        verb=connection_name,
-                        collection=target_collection,
-                        uuid=source_uuid,
-                        target_uuid=e_connection.get('uuid'),
-                        **config.get('target_endpoint'))
-
-                logger.info('CREATE: ' + create_connection_url)
-                attempts = 0
-
-                while attempts < 5:
-                    attempts += 1
-
-                    r_create = requests.post(create_connection_url)
-
-                    if r_create.status_code == 200:
-                        response = True
-                        break
-
-                    elif r_create.status_code == 401:
-                        logger.warning(
-                                'FAILED to create connection at URL=[%s]: %s' % (create_connection_url, r_create.text))
-
-                        if attempts < 5:
-                            logger.warning('WILL Retry')
-                            time.sleep(DEFAULT_RETRY_SLEEP)
-                        else:
-                            response = False
-                            logger.critical(
-                                    'WILL NOT RETRY: FAILED to create connection at URL=[%s]: %s' % (
-                                        create_connection_url, r_create.text))
-
-        response = True
-
-    except:
-        logger.error(traceback.format_exc())
-        logger.critical('error in migrate_connections on entity: \n %s' % json.dumps(source_entity, indent=2))
-
-    if (count_edges + count_edge_names) > 0:
-        logger.info('migrate_connections | success=[%s] | entity = %s/%s/%s | edge_types=[%s] | edges=[%s]' % (
-            response, app, collection_name, source_entity.get('uuid'), count_edge_names, count_edges))
-
-    return response
+    else:
+        # log an error and keep going if we cannot delete the entity at the specified URL.  Unlikely, but if so
+        # then this entity is borked
+        data_logger.critical(
+                'Deletion of entity at URL=[%s] FAILED [%s]: %s' % (target_entity_url_by_name, r.status_code, r.text))
+        return False
 
 
 def get_target_mapping(app, collection_name):
@@ -748,7 +729,7 @@ def parse_args():
                         help='Specifies what to migrate: data, connections, credentials, audit or none (just iterate '
                              'the apps/collections)',
                         type=str,
-                        choices=['data', 'connections', 'credentials', 'none', 'audit_data', 'audit_connections'],
+                        choices=['data', 'connections', 'credentials', 'none', 'audit_data'],
                         default='data')
 
     parser.add_argument('-s', '--source_config',
@@ -874,7 +855,7 @@ def init():
     config['target_endpoint'].update(config['target_config']['credentials'][target_org])
 
 
-def wait_for(threads, sleep_time=3000):
+def wait_for(threads, sleep_time=60):
     wait = True
 
     logger.info('Starting to wait for [%s] threads with sleep time=[%s]' % (len(threads), sleep_time))
@@ -927,8 +908,6 @@ def main():
         operation = migrate_user_credentials
     elif config.get('migrate') == 'audit_data':
         operation = audit_data
-    elif config.get('migrate') == 'audit_connections':
-        operation = audit_connections
     else:
         operation = None
 
