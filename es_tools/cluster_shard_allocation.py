@@ -13,21 +13,6 @@ nodes = [
 ]
 
 c3_nodes = [
-    'ees003wo',
-    'ees004wo',
-    'ees005wo',
-    'ees006wo',
-    'ees007wo',
-    'ees008wo',
-    'ees009wo',
-    'ees010wo',
-    'ees011wo',
-    'ees012wo',
-    'ees013wo',
-    'ees014wo',
-    'ees015wo',
-    'ees016wo',
-    'ees017wo',
     'ees018wo',
     'ees019wo'
 ]

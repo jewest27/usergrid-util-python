@@ -199,6 +199,15 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
     source_uuid = source_entity.get('uuid')
     count_edges = 0
     count_edge_names = 0
+    include_edges = config.get('include_edge', [])
+
+    if include_edges is None:
+        include_edges = []
+
+    exclude_edges = config.get('exclude_edge', [])
+
+    if exclude_edges is None:
+        exclude_edges = []
 
     try:
         connections = source_entity.get('metadata', {}).get('collections', {})
@@ -210,10 +219,24 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
 
         for connection_name in connections:
 
-            if collection_name == 'users' and connection_name in ['roles', 'followers', 'groups', 'feed', 'activities']:
+            if len(include_edges) > 0 and connection_name not in include_edges:
+                connection_logger.debug(
+                        'Skipping edge [%s] since it is not in INCLUDED list: %s' % (connection_name, include_edges))
+                continue
+
+            if connection_name in exclude_edges:
+                connection_logger.debug(
+                        'Skipping edge [%s] since it is in EXCLUDED list: %s' % (connection_name, exclude_edges))
+                continue
+
+            if (collection_name == 'devices' and connection_name in ['users', 'receipts']) or \
+                    (collection_name == 'receipts' and connection_name in ['devices']) or \
+                    (collection_name == 'users' and connection_name in ['roles', 'followers', 'groups',
+                                                                        'feed', 'activities']):
                 # feed and activities are not retrievable...
                 # roles and groups will be more efficiently handled from the role/group -> user
                 # followers will be handled by 'following'
+                # do only this from user -> device
                 continue
 
             connection_logger.debug('Processing connections [%s] of entity [%s/%s/%s]' % (
@@ -277,6 +300,7 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
                             time.sleep(DEFAULT_RETRY_SLEEP)
                         else:
                             response = False
+                            connection_stack = []
                             connection_logger.critical('WILL NOT RETRY: FAILED to create connection at URL=[%s]: %s' % (
                                 create_connection_url, r_create.text))
 
@@ -426,10 +450,10 @@ def migrate_data(app, collection_name, source_entity, attempts=0):
             return True
 
         elif r.status_code == 400 and target_collection in ['roles']:
-            repair_user_role(app, collection_name, source_entity)
+            return repair_user_role(app, collection_name, source_entity)
 
         elif r.status_code == 400 and target_collection in ['users']:
-            return audit_user(app, collection_name, source_entity)
+            return handle_user_migration_conflict(app, collection_name, source_entity)
 
         else:
             data_logger.error('Failure [%s] on attempt [%s] to PUT url=[%s], entity=[%s] response=[%s]' % (
@@ -566,6 +590,52 @@ def audit_user(app, collection_name, source_entity, attempts=0):
         time.sleep(DEFAULT_RETRY_SLEEP)
 
         return audit_data(app, collection_name, source_entity, attempts)
+
+
+def handle_user_migration_conflict(app, collection_name, source_entity, attempts=0):
+    if collection_name != 'users':
+        return False
+
+    attempts += 1
+    username = source_entity.get('username')
+    target_app, target_collection, target_org = get_target_mapping(app, collection_name)
+
+    target_entity_url = get_entity_url_template.format(org=target_org,
+                                                       app=target_app,
+                                                       collection=target_collection,
+                                                       uuid=username,
+                                                       **config.get('target_endpoint'))
+
+    # There is retry build in, here is the short circuit
+    if attempts >= 5:
+        logger.critical(
+                'Aborting after [%s] attempts to audit user [%s] at URL [%s]' % (attempts, username, target_entity_url))
+
+        return False
+
+    r = requests.get(url=target_entity_url)
+
+    if r.status_code == 200:
+        target_entity = r.json().get('entities')[0]
+
+        if source_entity.get('created') < target_entity.get('created'):
+            return repair_user_role(app, collection_name, source_entity)
+
+    elif r.status_code / 100 == 5:
+        audit_logger.warning(
+                'CONFLICT: handle_user_migration_conflict failed attempt [%s] GET [%s] on TARGET URL=[%s] - : %s' % (
+                    attempts, r.status_code, target_entity_url, r.text))
+
+        time.sleep(DEFAULT_RETRY_SLEEP)
+
+        return handle_user_migration_conflict(app, collection_name, source_entity, attempts)
+
+    else:
+        audit_logger.error(
+                'CONFLICT: Failed handle_user_migration_conflict attempt [%s] GET [%s] on TARGET URL=[%s] - : %s' % (
+                    attempts, r.status_code, target_entity_url, r.text))
+
+        return False
 
 
 def get_best_source_entity(app, collection_name, source_entity):
@@ -715,8 +785,13 @@ def parse_args():
                         required=False,
                         action='append')
 
-    parser.add_argument('-e', '--edge',
-                        help='Name of one or more edges/connection types to include, specify none to include all edges',
+    parser.add_argument('-e', '--include_edge',
+                        help='Name of one or more edges/connection types to INCLUDE, specify none to include all edges',
+                        required=False,
+                        action='append')
+
+    parser.add_argument('--exclude_edge',
+                        help='Name of one or more edges/connection types to EXCLUDE, specify none to include all edges',
                         required=False,
                         action='append')
 

@@ -3,7 +3,7 @@ import time
 
 __author__ = 'ApigeeCorporation'
 
-url_base = 'http://localhost:9211'
+url_base = 'http://localhost:9200'
 
 # r = requests.get(url_base + "/_cat/indices?v")
 # print r.text
@@ -16,7 +16,7 @@ indices = r.json()['indices']
 
 print 'retrieved %s indices' % len(indices)
 
-NUMBER_VALUE = 1
+NUMBER_VALUE = 0
 
 payload = {
     "index.number_of_replicas": NUMBER_VALUE,
@@ -29,8 +29,9 @@ includes = [
     # 'b6768a08-b5d5-11e3-a495-11ddb1de66c8',
     # 'b6768a08-b5d5-11e3-a495-10ddb1de66c3',
     # 'b6768a08-b5d5-11e3-a495-11ddb1de66c9',
-    'a34ad389-b626-11e4-848f-06b49118d7d0'
+    # 'a34ad389-b626-11e4-848f-06b49118d7d0'
 ]
+
 
 excludes = [
     # 'b6768a08-b5d5-11e3-a495-11ddb1de66c8',

@@ -4,29 +4,6 @@ import requests
 __author__ = 'ApigeeCorporation'
 
 nodes = [
-    'res005sy',
-    'res006sy',
-    # 'res007sy',
-    'res008sy',
-    'res009sy',
-    'res010sy',
-    # 'res011sy',
-    # 'res012sy',
-    'res013sy',
-    'res014sy',
-    'res015sy',
-    'res016sy',
-    'res017sy',
-    'res018sy',
-    'res020sy',
-    'res021sy',
-    'res022sy',
-    'res023sy',
-    'res024sy',
-    'res025sy',
-    'res026sy',
-    'res027sy',
-    'res028sy',
     'res029sy',
     'res030sy',
     'res031sy',
@@ -38,12 +15,7 @@ nodes = [
 large_nodes = [
     'res035sy',
     'res036sy',
-    'res037sy',
-    'res038sy',
-    'res039sy',
-    'res040sy',
-    'res041sy',
-    'res042sy'
+    'res037sy'
 ]
 
 url_base = 'http://localhost:9211'
@@ -66,7 +38,6 @@ includes = [
     # 'b6768a08-b5d5-11e3-a495-11ddb1de66c8',
     # 'b6768a08-b5d5-11e3-a495-10ddb1de66c3',
     # 'b6768a08-b5d5-11e3-a495-11ddb1de66c9',
-    'a34ad389-b626-11e4-848f-06b49118d7d0'
 ]
 
 excludes = [

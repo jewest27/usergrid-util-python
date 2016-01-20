@@ -17,7 +17,6 @@ includes = [
     # 'b6768a08-b5d5-11e3-a495-11ddb1de66c8',
     # 'b6768a08-b5d5-11e3-a495-10ddb1de66c3',
     # 'b6768a08-b5d5-11e3-a495-11ddb1de66c9',
-    'e2e'
 ]
 
 excludes = [
@@ -55,5 +54,5 @@ for index in indices:
         url_template = '%s/%s' % (url_base, index)
         print url_template
 
-        response = requests.delete('%s/%s' % (url_base, index))
-        settings = response.json()
+        # response = requests.delete('%s/%s' % (url_base, index))
+        # settings = response.json()
