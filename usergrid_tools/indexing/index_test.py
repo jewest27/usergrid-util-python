@@ -13,8 +13,18 @@ entity_template = {
          "property": "show"},
         {"role": "line-owner", "route": "/master", "element": "element2", "entitlementId": "entitlement8",
          "property": "hide"}
-    ]
+    ],
+    "nullArray1": [None],
+    "nullArray2": [None, None],
+    "nullArray3": [None, None],
+    "nest1": {
+        "nest2": {
+            "nest3": [None, None, 'foo']
+        }
+    }
 }
+
+# Replace these with your own org and credentials if needed.  This assumes sandbox permissioned app
 
 url_template = '{api_url}/{org}/{app}/{collection}'
 url_data = {
@@ -65,8 +75,14 @@ def test_multiple(number_of_entities=10):
     return created_map
 
 
+def nested_null_test():
+    pass
+
+
 def test_created(created_map, q_url, sleep_time=0.0):
     print 'checking number created, expecting %s....' % len(created_map)
+
+    nested_null_test()
 
     count_missing = 100
     start = datetime.datetime.now()
@@ -100,10 +116,11 @@ def test_created(created_map, q_url, sleep_time=0.0):
 
 def clear(clear_url):
     print 'deleting.... ' + clear_url
+
     r = requests.delete(clear_url)
 
     if r.status_code != 200:
-        print 'error deleting!'
+        print 'error deleting url=' + clear_url
         print json.dumps(r.json())
 
     else:
@@ -111,7 +128,7 @@ def clear(clear_url):
         len_entities = len(res.get('entities', []))
 
         if len_entities > 0:
-            clear(url)
+            clear(clear_url)
 
 
 def test_cleared(q_url):
@@ -129,19 +146,45 @@ def test_cleared(q_url):
 processes = Pool(32)
 
 
+def test_url(q_url, sleep_time=0.25):
+
+    test_var = False
+
+    while not test_var:
+        r = requests.get(q_url)
+
+        if r.status_code == 200:
+
+            if len(r.json().get('entities')) >= 1:
+                test_var = True
+        else:
+            print 'non 200'
+
+        if test_var:
+            print 'Test of URL [%s] Passes'
+        else:
+            print 'Test of URL [%s] Passes'
+            time.sleep(sleep_time)
+
+
 def main():
     global url
 
     try:
         q_url = url + "?ql=select * where dataType='entitlements'&limit=1000"
+        delete_q_url = url + "?ql=select * where dataType='entitlements'&limit=1000"
 
         created_map = test_multiple(999)
 
         test_created(created_map=created_map,
                      q_url=q_url,
-                     sleep_time=1)
+                     sleep_time=.25)
 
-        clear(clear_url=q_url)
+        test_url(url + "?ql=select * where nest1.nest2.nest3 ='foo'")
+
+        test_url(url + "?ql=select * where nest1.nest2.nest3 contains 'foo*'")
+
+        clear(clear_url=delete_q_url)
 
     except KeyboardInterrupt:
         processes.terminate()
