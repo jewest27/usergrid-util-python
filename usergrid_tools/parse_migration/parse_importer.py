@@ -48,17 +48,6 @@ def init_logging(stdout_enabled=True):
         root_logger.addHandler(stdout_logger)
 
 
-def join_roles_to_roles(working_directory):
-    join_file = os.path.join(working_directory, '_Join:roles:_Role.json')
-
-    if os.path.isfile(join_file) and os.path.getsize(join_file) > 0:
-        with open(join_file, 'r') as f:
-            users_to_roles = json.load(f).get('results', [])
-            logger.info('Loaded [%s] Roles->Roles' % len(users_to_roles))
-    else:
-        logger.info('No Roles->Roles to load')
-
-
 def convert_parse_entity(collection, parse_entity):
     parse_entity['type'] = collection
 
@@ -70,10 +59,11 @@ def convert_parse_entity(collection, parse_entity):
     for name, value in parse_entity.iteritems():
         if isinstance(value, dict):
             if value.get('__type') == 'Pointer':
-                logger.info('connection found: %s' % value)
+                class_name = value.get('className') if value.get('className')[0] != '_' else value.get('className')[1:]
+                connections[value.get('objectId')] = class_name
 
-                connections[value.get('objectId')] = value.get('className') \
-                    if value.get('className')[0] != '_' else value.get('className')[1:]
+                logger.info('Connection found from [%s: %s] to entity [%s: %s]' % (
+                    collection, parse_entity['name'], class_name, value.get('objectId')))
 
     return UsergridEntity(parse_entity), connections
 
@@ -134,33 +124,86 @@ def load_users_and_roles(working_directory):
                 role_id = user_to_role['owningId']
                 role_uuid = parse_id_to_uuid_map.get(role_id)
 
-                user_id = user_to_role['relatedId']
-                user_uuid = parse_id_to_uuid_map.get(user_id)
+                target_role_id = user_to_role['relatedId']
+                target_role_uuid = parse_id_to_uuid_map.get(target_role_id)
 
-                if role_uuid is None or user_uuid is None:
-                    logger.error('Failed on assigning role [%s] to user [%s]' % (role_uuid, user_uuid))
+                if role_uuid is None or target_role_uuid is None:
+                    logger.error('Failed on assigning role [%s] to user [%s]' % (role_uuid, target_role_uuid))
                     continue
 
-                user_entity = build_usergrid_entity('user', user_uuid)
+                target_role_entity = build_usergrid_entity('user', target_role_uuid)
 
-                res = Usergrid.assign_role(role_uuid, user_entity)
+                res = Usergrid.assign_role(role_uuid, target_role_entity)
 
                 if res.ok:
-                    logger.info('Assigned role [%s] to user [%s]' % (role_uuid, user_uuid))
+                    logger.info('Assigned role [%s] to user [%s]' % (role_uuid, target_role_uuid))
                 else:
-                    logger.error('Failed on assigning role [%s] to user [%s]' % (role_uuid, user_uuid))
+                    logger.error('Failed on assigning role [%s] to user [%s]' % (role_uuid, target_role_uuid))
 
     else:
         logger.info('No Users -> Roles to load')
 
+    join_file = os.path.join(working_directory, '_Join:roles:_Role.json')
+
+    if os.path.isfile(join_file) and os.path.getsize(join_file) > 0:
+        with open(join_file, 'r') as f:
+            users_to_roles = json.load(f).get('results', [])
+            logger.info('Loaded [%s] Roles->Roles' % len(users_to_roles))
+
+            for user_to_role in users_to_roles:
+                role_id = user_to_role['owningId']
+                role_uuid = parse_id_to_uuid_map.get(role_id)
+
+                target_role_id = user_to_role['relatedId']
+                target_role_uuid = parse_id_to_uuid_map.get(target_role_id)
+
+                if role_uuid is None or target_role_uuid is None:
+                    logger.error('Failed on assigning role [%s] to role [%s]' % (role_uuid, target_role_uuid))
+                    continue
+
+                target_role_entity = build_usergrid_entity('role', target_role_uuid)
+
+                res = Usergrid.assign_role(role_uuid, target_role_entity)
+
+                if res.ok:
+                    logger.info('Assigned role [%s] to role [%s]' % (role_uuid, target_role_uuid))
+                else:
+                    logger.error('Failed on assigning role [%s] to role [%s]' % (role_uuid, target_role_uuid))
+
+    else:
+        logger.info('No Roles -> Roles to load')
+
+
+def process_join_file(working_directory, data_file):
+    file_path = os.path.join(working_directory, data_file)
+
+    with open(file_path, 'r') as f:
+        entities = json.load(f).get('results')
+
 
 def load_entities(working_directory):
     files = [f for f in listdir(working_directory)
-             if isfile(os.path.join(working_directory, f)) and f[0] != '_']
+             if isfile(os.path.join(working_directory, f)) and f not in ['_Join:roles:_Role.json',
+                                                                         '_Join:users:_Role.json',
+                                                                         '_User.json',
+                                                                         '_Role.json']]
 
     for data_file in files:
+        if data_file == '_Product.json':
+            logger.critical('In-app Purchases are not supported in Usergrid')
+            continue
+
+        if data_file[0:5] == '_Join:':
+            logger.critical('Join file not yet fully supported')
+            process_join_file(working_directory, data_file)
+            continue
+
         file_path = os.path.join(working_directory, data_file)
         collection = data_file.split('.')[0]
+
+        if collection[0] == '_':
+            logger.warn('Found internal type: [%s]' % collection)
+            collection = collection[1:]
 
         if collection not in global_connections:
             global_connections[collection] = {}
@@ -259,8 +302,6 @@ def main():
                   client_secret=config.get('client_secret'))
 
     tmp_dir = config.get('tmp_dir')
-    # '/Users/ApigeeCorporation/tmp'
-    # file_path = '/Users/ApigeeCorporation/code/usergrid/usergrid-util-python/usergrid_tools/parse_migration/0e4b82c5-9aad-45de-810a-ff07c281ed2d_1454177649_export.zip'
     file_path = config.get('file')
 
     file_name = os.path.basename(file_path).split('.')[0]
@@ -277,4 +318,5 @@ def main():
     create_connections()
 
 
-main()
+if __name__ == '__main__':
+    main()
