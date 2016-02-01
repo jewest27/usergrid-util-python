@@ -16,6 +16,7 @@ from usergrid.UsergridClient import UsergridEntity
 logger = logging.getLogger('UsergridParseImporter')
 
 parse_id_to_uuid_map = {}
+global_connections = {}
 
 
 def init_logging(stdout_enabled=True):
@@ -68,12 +69,24 @@ def convert_parse_entity(collection, parse_entity):
 
         if isinstance(value, dict):
             if value.get('__type') == 'Pointer':
-                print 'connection! %s' % value
+                logger.info('connection found: %s' % value)
+
                 connections[value.get('objectId')] = value.get('className') if value.get('className')[
                                                                                    0] != '_' else value.get(
                         'className')[1:]
 
     return UsergridEntity(parse_entity), connections
+
+
+def build_usergrid_entity(collection, entity_uuid, data=None):
+    identifier = {'type': collection, 'uuid': entity_uuid}
+
+    if data is None:
+        data = {}
+
+    data.update(identifier)
+
+    return UsergridEntity(data)
 
 
 def load_users_and_roles(working_directory):
@@ -82,7 +95,7 @@ def load_users_and_roles(working_directory):
         logger.info('Loaded [%s] Users' % len(users))
 
     for i, parse_user in enumerate(users):
-        print 'Loading user [%s / %s]' % (i, parse_user['objectId'])
+        logger.info('Loading user [%s]: [%s / %s]' % (i, parse_user['username'], parse_user['objectId']))
         usergrid_user, connections = convert_parse_entity('users', parse_user)
         response = usergrid_user.save()
 
@@ -94,7 +107,7 @@ def load_users_and_roles(working_directory):
         logger.info('Loaded [%s] Roles' % len(roles))
 
     for i, parse_role in enumerate(roles):
-        print 'Loading role [%s / %s]' % (i, parse_role['objectId'])
+        logger.info('Loading role [%s]: [%s / %s]' % (i, parse_role['name'], parse_role['objectId']))
         usergrid_role, connections = convert_parse_entity('roles', parse_role)
         usergrid_role.save()
 
@@ -108,6 +121,23 @@ def load_users_and_roles(working_directory):
             users_to_roles = json.load(f).get('results', [])
             logger.info('Loaded [%s] User->Roles' % len(users_to_roles))
 
+            for user_to_role in users_to_roles:
+                role_id = user_to_role['owningId']
+                role_uuid = parse_id_to_uuid_map.get(role_id)
+
+                user_id = user_to_role['relatedId']
+                user_uuid = parse_id_to_uuid_map.get(user_id)
+
+                role_entity = build_usergrid_entity('role', role_uuid)
+                user_entity = build_usergrid_entity('user', user_uuid)
+
+                res = Usergrid.assign_role(role_uuid, user_entity)
+
+                if res.ok:
+                    logger.info('Assigned role [%s] to user [%s]' % (role_uuid, user_uuid))
+                else:
+                    logger.error('Failed on assigning role [%s] to user [%s]' % (role_uuid, user_uuid))
+
     else:
         logger.info('No Users->Roles to load')
 
@@ -119,30 +149,60 @@ def load_entities(working_directory):
     for file in files:
         file_path = os.path.join(working_directory, file)
         collection = file.split('.')[0]
+
+        if collection not in global_connections:
+            global_connections[collection] = {}
+
         entities = []
 
         with open(file_path, 'r') as f:
             entities = json.load(f).get('results')
 
-            print 'Found [%s] entities of type [%s]' % (len(entities), collection)
+            logger.info('Found [%s] entities of type [%s]' % (len(entities), collection))
 
             for parse_entity in entities:
                 usergrid_entity, connections = convert_parse_entity(collection, parse_entity)
                 response = usergrid_entity.save()
 
+                global_connections[collection][usergrid_entity.get('uuid')] = connections
+
                 if response.ok:
-                    print 'Saved Entity: %s' % parse_entity
+                    logger.info('Saved Entity: %s' % parse_entity)
+                else:
+                    logger.info('Error saving entity %s: %s' % (parse_entity, response))
 
-                    for entity_id, entity_type in connections.iteritems():
-                        uuid = parse_id_to_uuid_map.get(entity_id)
-                        to_entity = UsergridEntity({'uuid': uuid, 'type': entity_type})
 
-                        connect_response = usergrid_entity.connect('pointers', to_entity)
+def connect_entities(from_entity, to_entity, connection_name):
+    connect_response = from_entity.connect(connection_name, to_entity)
 
-                        if connect_response.ok:
-                            print 'connected'
-                        else:
-                            print connect_response
+    if connect_response.ok:
+        logger.info('Successfully connected [%s / %s]--[%s]-->[%s / %s]' % (
+            from_entity.get('type'), from_entity.get('uuid'), connection_name, to_entity.get('type'),
+            to_entity.get('uuid')))
+    else:
+        logger.error('Unable to connect [%s / %s]--[%s]-->[%s / %s]: %s' % (
+            from_entity.get('type'), from_entity.get('uuid'), connection_name, to_entity.get('type'),
+            to_entity.get('uuid'), connect_response))
+
+
+def create_connections():
+    for from_collection, entity_map in global_connections.iteritems():
+
+        for from_entity_uuid, entity_connections in entity_map.iteritems():
+            from_entity = UsergridEntity({
+                'uuid': from_entity_uuid,
+                'type': from_collection
+            })
+
+            for to_entity_id, to_entity_collection in entity_connections.iteritems():
+                to_entity = UsergridEntity({
+                    'uuid': parse_id_to_uuid_map.get(to_entity_id),
+                    'type': to_entity_collection
+                })
+
+                connect_entities(from_entity, to_entity, 'pointers')
+
+                connect_entities(to_entity, from_entity, 'pointers')
 
 
 def main():
@@ -165,6 +225,8 @@ def main():
     load_users_and_roles(working_directory)
 
     load_entities(working_directory)
+
+    create_connections()
 
 
 # count files
