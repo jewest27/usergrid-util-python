@@ -4,19 +4,21 @@ from logging.handlers import RotatingFileHandler
 import os
 from os import listdir
 import zipfile
-
-# parameters
 from os.path import isfile
-
 import sys
+
+import argparse
 
 from usergrid import Usergrid
 from usergrid.UsergridClient import UsergridEntity
+
+__author__ = 'Jeff West @ ApigeeCorporation'
 
 logger = logging.getLogger('UsergridParseImporter')
 
 parse_id_to_uuid_map = {}
 global_connections = {}
+config = {}
 
 
 def init_logging(stdout_enabled=True):
@@ -66,26 +68,20 @@ def convert_parse_entity(collection, parse_entity):
     connections = {}
 
     for name, value in parse_entity.iteritems():
-
         if isinstance(value, dict):
             if value.get('__type') == 'Pointer':
                 logger.info('connection found: %s' % value)
 
-                connections[value.get('objectId')] = value.get('className') if value.get('className')[
-                                                                                   0] != '_' else value.get(
-                        'className')[1:]
+                connections[value.get('objectId')] = value.get('className') \
+                    if value.get('className')[0] != '_' else value.get('className')[1:]
 
     return UsergridEntity(parse_entity), connections
 
 
 def build_usergrid_entity(collection, entity_uuid, data=None):
     identifier = {'type': collection, 'uuid': entity_uuid}
-
-    if data is None:
-        data = {}
-
+    data = {} if data is None else data
     data.update(identifier)
-
     return UsergridEntity(data)
 
 
@@ -97,10 +93,16 @@ def load_users_and_roles(working_directory):
     for i, parse_user in enumerate(users):
         logger.info('Loading user [%s]: [%s / %s]' % (i, parse_user['username'], parse_user['objectId']))
         usergrid_user, connections = convert_parse_entity('users', parse_user)
-        response = usergrid_user.save()
+        res = usergrid_user.save()
 
-        if 'uuid' in usergrid_user.entity_data:
-            parse_id_to_uuid_map[parse_user['objectId']] = usergrid_user.get('uuid')
+        if res.ok:
+            logger.info('Saved user [%s]: [%s / %s]' % (i, parse_user['username'], parse_user['objectId']))
+
+            if 'uuid' in usergrid_user.entity_data:
+                parse_id_to_uuid_map[parse_user['objectId']] = usergrid_user.get('uuid')
+        else:
+            logger.error(
+                    'Error saving user [%s]: [%s / %s] - %s' % (i, parse_user['username'], parse_user['objectId'], res))
 
     with open(os.path.join(working_directory, '_Role.json'), 'r') as f:
         roles = json.load(f).get('results', [])
@@ -109,10 +111,17 @@ def load_users_and_roles(working_directory):
     for i, parse_role in enumerate(roles):
         logger.info('Loading role [%s]: [%s / %s]' % (i, parse_role['name'], parse_role['objectId']))
         usergrid_role, connections = convert_parse_entity('roles', parse_role)
-        usergrid_role.save()
+        res = usergrid_role.save()
 
-        if 'uuid' in usergrid_role.entity_data:
-            parse_id_to_uuid_map[parse_role['objectId']] = usergrid_role.get('uuid')
+        if res.ok:
+            logger.info('Saved role [%s]: [%s / %s]' % (i, parse_role['name'], parse_role['objectId']))
+
+            if 'uuid' in usergrid_role.entity_data:
+                parse_id_to_uuid_map[parse_role['objectId']] = usergrid_role.get('uuid')
+
+        else:
+            logger.error(
+                    'Error saving role [%s]: [%s / %s] - %s' % (i, parse_role['name'], parse_role['objectId'], res))
 
     join_file = os.path.join(working_directory, '_Join:users:_Role.json')
 
@@ -128,7 +137,10 @@ def load_users_and_roles(working_directory):
                 user_id = user_to_role['relatedId']
                 user_uuid = parse_id_to_uuid_map.get(user_id)
 
-                role_entity = build_usergrid_entity('role', role_uuid)
+                if role_uuid is None or user_uuid is None:
+                    logger.error('Failed on assigning role [%s] to user [%s]' % (role_uuid, user_uuid))
+                    continue
+
                 user_entity = build_usergrid_entity('user', user_uuid)
 
                 res = Usergrid.assign_role(role_uuid, user_entity)
@@ -139,21 +151,19 @@ def load_users_and_roles(working_directory):
                     logger.error('Failed on assigning role [%s] to user [%s]' % (role_uuid, user_uuid))
 
     else:
-        logger.info('No Users->Roles to load')
+        logger.info('No Users -> Roles to load')
 
 
 def load_entities(working_directory):
     files = [f for f in listdir(working_directory)
              if isfile(os.path.join(working_directory, f)) and f[0] != '_']
 
-    for file in files:
-        file_path = os.path.join(working_directory, file)
-        collection = file.split('.')[0]
+    for data_file in files:
+        file_path = os.path.join(working_directory, data_file)
+        collection = data_file.split('.')[0]
 
         if collection not in global_connections:
             global_connections[collection] = {}
-
-        entities = []
 
         with open(file_path, 'r') as f:
             entities = json.load(f).get('results')
@@ -189,53 +199,82 @@ def create_connections():
     for from_collection, entity_map in global_connections.iteritems():
 
         for from_entity_uuid, entity_connections in entity_map.iteritems():
-            from_entity = UsergridEntity({
-                'uuid': from_entity_uuid,
-                'type': from_collection
-            })
+            from_entity = build_usergrid_entity(from_collection, from_entity_uuid)
 
             for to_entity_id, to_entity_collection in entity_connections.iteritems():
-                to_entity = UsergridEntity({
-                    'uuid': parse_id_to_uuid_map.get(to_entity_id),
-                    'type': to_entity_collection
-                })
+                to_entity = build_usergrid_entity(to_entity_collection, parse_id_to_uuid_map.get(to_entity_id))
 
                 connect_entities(from_entity, to_entity, 'pointers')
-
                 connect_entities(to_entity, from_entity, 'pointers')
 
 
-def main():
-    init_logging()
-    Usergrid.init(org_id='jwest1',
-                  app_id='sandbox')
+def parse_args():
+    parser = argparse.ArgumentParser(description='Parse.com Data Importer for Parse.com')
 
-    tmp_dir = '/Users/ApigeeCorporation/tmp'
-    file_path = '/Users/ApigeeCorporation/code/usergrid/usergrid-util-python/usergrid_tools/parse_migration/0e4b82c5-9aad-45de-810a-ff07c281ed2d_1454177649_export.zip'
+    parser.add_argument('-o', '--org',
+                        help='Name of the org to migrate',
+                        type=str,
+                        required=True)
+
+    parser.add_argument('-a', '--app',
+                        help='Name of one or more apps to include, specify none to include all apps',
+                        type=str,
+                        required=True)
+
+    parser.add_argument('-f', '--file',
+                        help='Full or relative path of the data file to import',
+                        required=True,
+                        type=str)
+
+    parser.add_argument('--tmp_dir',
+                        help='Directory where data file will be unzipped',
+                        required=False,
+                        default='/tmp',
+                        type=str)
+
+    parser.add_argument('--client_id',
+                        help='The Client ID for using OAuth Tokens - necessary if app is secured',
+                        required=False,
+                        type=str)
+
+    parser.add_argument('--client_secret',
+                        help='The Client Secret for using OAuth Tokens - necessary if app is secured',
+                        required=False,
+                        type=str)
+
+    my_args = parser.parse_args(sys.argv[1:])
+
+    return vars(my_args)
+
+
+def main():
+    global config
+    config = parse_args()
+
+    init_logging()
+
+    Usergrid.init(org_id=config.get('org'),
+                  app_id=config.get('app'),
+                  client_id=config.get('client_id'),
+                  client_secret=config.get('client_secret'))
+
+    tmp_dir = config.get('tmp_dir')
+    # '/Users/ApigeeCorporation/tmp'
+    # file_path = '/Users/ApigeeCorporation/code/usergrid/usergrid-util-python/usergrid_tools/parse_migration/0e4b82c5-9aad-45de-810a-ff07c281ed2d_1454177649_export.zip'
+    file_path = config.get('file')
 
     file_name = os.path.basename(file_path).split('.')[0]
 
     working_directory = os.path.join(tmp_dir, file_name)
 
-    with zipfile.ZipFile(file_path, "r") as z:
+    with zipfile.ZipFile(file_path, 'r') as z:
         logger.info('Extracting files to directory: %s' % working_directory)
         z.extractall(working_directory)
         logger.info('Extraction complete')
 
     load_users_and_roles(working_directory)
-
     load_entities(working_directory)
-
     create_connections()
 
-
-# count files
-# iterate internal objects starting with _
-# load users
-# load roles
-# connect roles -> Users
-# connect roles -> roles
-# iterate custom collections
-# end
 
 main()
