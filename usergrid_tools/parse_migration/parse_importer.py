@@ -6,8 +6,8 @@ from os import listdir
 import zipfile
 from os.path import isfile
 import sys
-
 import argparse
+import traceback
 
 from usergrid import Usergrid
 from usergrid.UsergridClient import UsergridEntity
@@ -37,7 +37,6 @@ def init_logging(stdout_enabled=True):
     root_logger.addHandler(rotating_file)
     root_logger.setLevel(logging.INFO)
 
-    logging.getLogger('boto').setLevel(logging.ERROR)
     logging.getLogger('urllib3.connectionpool').setLevel(logging.WARN)
     logging.getLogger('requests.packages.urllib3.connectionpool').setLevel(logging.WARN)
 
@@ -174,27 +173,61 @@ def load_users_and_roles(working_directory):
         logger.info('No Roles -> Roles to load')
 
 
-def process_join_file(working_directory, data_file):
-    file_path = os.path.join(working_directory, data_file)
+def process_join_file(working_directory, join_file):
+    file_path = os.path.join(working_directory, join_file)
+
+    logger.warn('Processing Join file: %s' % file_path)
+
+    parts = join_file.split(':')
+
+    if len(parts) != 3:
+        logger.warn('Did not find expected 3 parts in JOIN filename: %s' % join_file)
+        return
+
+    related_type = parts[1]
+    owning_type = parts[2].split('.')[0]
+
+    owning_type = owning_type[1:] if owning_type[0] == '_' else owning_type
 
     with open(file_path, 'r') as f:
-        entities = json.load(f).get('results')
+        try:
+            json_data = json.load(f)
+
+        except ValueError, e:
+            print traceback.format_exc(e)
+            logger.error('Unable to process file: %s' % file_path)
+            return
+
+        entities = json_data.get('results')
+
+        for join in entities:
+            owning_id = join.get('owningId')
+            related_id = join.get('relatedId')
+
+            owning_entity = build_usergrid_entity(owning_type, parse_id_to_uuid_map.get(owning_id))
+            related_entity = build_usergrid_entity(related_type, parse_id_to_uuid_map.get(related_id))
+
+            connect_entities(owning_entity, related_entity, 'joins')
+            connect_entities(related_entity, owning_entity, 'joins')
 
 
 def load_entities(working_directory):
-    files = [f for f in listdir(working_directory)
-             if isfile(os.path.join(working_directory, f)) and f not in ['_Join:roles:_Role.json',
-                                                                         '_Join:users:_Role.json',
-                                                                         '_User.json',
-                                                                         '_Role.json']]
+    files = [
+        f for f in listdir(working_directory)
 
-    for data_file in files:
-        if data_file == '_Product.json':
-            logger.critical('In-app Purchases are not supported in Usergrid')
-            continue
+        if isfile(os.path.join(working_directory, f))
+        and os.path.getsize(os.path.join(working_directory, f)) > 0
+        and f not in ['_Join:roles:_Role.json',
+                      '_Join:users:_Role.json',
+                      '_User.json',
+                      '_Product.json',
+                      '_Installation.json',
+                      '_Role.json']
+        ]
 
-        if data_file[0:5] == '_Join:':
-            logger.critical('Join file not yet fully supported')
+    # sort to put join files last...
+    for data_file in sorted(files):
+        if data_file[0:6] == '_Join:':
             process_join_file(working_directory, data_file)
             continue
 
@@ -209,7 +242,16 @@ def load_entities(working_directory):
             global_connections[collection] = {}
 
         with open(file_path, 'r') as f:
-            entities = json.load(f).get('results')
+
+            try:
+                json_data = json.load(f)
+
+            except ValueError, e:
+                print traceback.format_exc(e)
+                logger.error('Unable to process file: %s' % file_path)
+                continue
+
+            entities = json_data.get('results')
 
             logger.info('Found [%s] entities of type [%s]' % (len(entities), collection))
 
@@ -252,7 +294,7 @@ def create_connections():
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='Parse.com Data Importer for Parse.com')
+    parser = argparse.ArgumentParser(description='Parse.com Data Importer for Usergrid')
 
     parser.add_argument('-o', '--org',
                         help='Name of the org to migrate',
@@ -264,6 +306,11 @@ def parse_args():
                         type=str,
                         required=True)
 
+    parser.add_argument('--url',
+                        help='The URL of the Usergrid Instance',
+                        type=str,
+                        required=True)
+
     parser.add_argument('-f', '--file',
                         help='Full or relative path of the data file to import',
                         required=True,
@@ -271,8 +318,7 @@ def parse_args():
 
     parser.add_argument('--tmp_dir',
                         help='Directory where data file will be unzipped',
-                        required=False,
-                        default='/tmp',
+                        required=True,
                         type=str)
 
     parser.add_argument('--client_id',
@@ -298,20 +344,37 @@ def main():
 
     Usergrid.init(org_id=config.get('org'),
                   app_id=config.get('app'),
+                  base_url=config.get('url'),
                   client_id=config.get('client_id'),
                   client_secret=config.get('client_secret'))
 
     tmp_dir = config.get('tmp_dir')
     file_path = config.get('file')
 
-    file_name = os.path.basename(file_path).split('.')[0]
+    if not os.path.isfile(file_path):
+        logger.critical('File path specified [%s] is not a file!' % file_path)
+        logger.critical('Unable to continue')
+        exit(1)
 
+    if not os.path.isdir(tmp_dir):
+        logger.critical('Temp Directory path specified [%s] is not a directory!' % tmp_dir)
+        logger.critical('Unable to continue')
+        exit(1)
+
+    file_name = os.path.basename(file_path).split('.')[0]
     working_directory = os.path.join(tmp_dir, file_name)
 
-    with zipfile.ZipFile(file_path, 'r') as z:
-        logger.info('Extracting files to directory: %s' % working_directory)
-        z.extractall(working_directory)
-        logger.info('Extraction complete')
+    try:
+        with zipfile.ZipFile(file_path, 'r') as z:
+            logger.warn('Extracting files to directory: %s' % working_directory)
+            z.extractall(working_directory)
+            logger.warn('Extraction complete')
+
+    except Exception, e:
+        logger.critical(traceback.format_exc(e))
+        logger.critical('Extraction failed')
+        logger.critical('Unable to continue')
+        exit(1)
 
     load_users_and_roles(working_directory)
     load_entities(working_directory)
