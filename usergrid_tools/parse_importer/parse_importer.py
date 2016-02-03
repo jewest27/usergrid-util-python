@@ -297,12 +297,12 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Parse.com Data Importer for Usergrid')
 
     parser.add_argument('-o', '--org',
-                        help='Name of the org to migrate',
+                        help='Name of the Usergrid Org to import data into - must already exist',
                         type=str,
                         required=True)
 
     parser.add_argument('-a', '--app',
-                        help='Name of one or more apps to include, specify none to include all apps',
+                        help='Name of the Usergrid Application to import data into - must already exist',
                         type=str,
                         required=True)
 
