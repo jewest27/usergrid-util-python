@@ -8,7 +8,7 @@ import requests
 import traceback
 from logging.handlers import RotatingFileHandler
 import time
-from usergrid import UsergridQuery
+from usergrid import UsergridQueryIterator
 from requests.auth import HTTPBasicAuth
 import urllib3
 
@@ -26,6 +26,9 @@ urllib3.disable_warnings()
 DEFAULT_CREATE_APPS = False
 DEFAULT_RETRY_SLEEP = 2
 DEFAULT_PROCESSING_SLEEP = 5
+
+session_source = requests.Session()
+session_destination = requests.Session()
 
 
 def init_logging(stdout_enabled=True):
@@ -210,22 +213,26 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
         exclude_edges = []
 
     try:
-        connections = source_entity.get('metadata', {}).get('collections', {})
+        connections = source_entity.get('metadata', {}).get('connections', {})
 
         count_edge_names = len(connections)
 
-        connection_logger.debug('Processing [%s] connection types of entity [%s/%s/%s]' % (
-            count_edge_names, target_app, collection_name, source_uuid))
+        if count_edge_names <= 0:
+            connection_logger.info('No connection types on entity [%s/%s/%s]' % (app, collection_name, source_uuid))
+            return
+
+        connection_logger.info('Processing [%s] connections [%s] of entity [%s/%s/%s]' % (
+            count_edge_names, connections, app, collection_name, source_uuid))
 
         for connection_name in connections:
 
             if len(include_edges) > 0 and connection_name not in include_edges:
-                connection_logger.debug(
+                connection_logger.info(
                         'Skipping edge [%s] since it is not in INCLUDED list: %s' % (connection_name, include_edges))
                 continue
 
             if connection_name in exclude_edges:
-                connection_logger.debug(
+                connection_logger.info(
                         'Skipping edge [%s] since it is in EXCLUDED list: %s' % (connection_name, exclude_edges))
                 continue
 
@@ -239,7 +246,7 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
                 # do only this from user -> device
                 continue
 
-            connection_logger.debug('Processing connections [%s] of entity [%s/%s/%s]' % (
+            connection_logger.info('Processing connection type=[%s] of entity [%s/%s/%s]' % (
                 connection_name, app, collection_name, source_uuid))
 
             connection_query_url = connection_query_url_template.format(
@@ -250,7 +257,7 @@ def migrate_connections(app, collection_name, source_entity, attempts=0):
                     uuid=source_uuid,
                     **config.get('source_endpoint'))
 
-            connection_query = UsergridQuery(connection_query_url)
+            connection_query = UsergridQueryIterator(connection_query_url)
 
             connection_stack = []
 
@@ -678,7 +685,7 @@ def get_best_source_entity(app, collection_name, source_entity):
 
         data_logger.info('Attempting to determine best entity from query on URL %s' % source_entity_query_url)
 
-        q = UsergridQuery(source_entity_query_url)
+        q = UsergridQueryIterator(source_entity_query_url)
 
         desired_entity = None
 
@@ -912,6 +919,7 @@ def init():
 
         if len(parts) == 2:
             config['org_mapping'][parts[0]] = parts[1]
+            logger.info('Mapping Org [%s] to [%s] from mapping [%s]' % (parts[0], parts[1], mapping))
         else:
             logger.warning('Skipping Org mapping: [%s]' % mapping)
 
@@ -951,6 +959,12 @@ def wait_for(threads, sleep_time=60):
             time.sleep(sleep_time)
 
 
+def get_token(endpoint_config):
+    token_request = {}
+
+    pass
+
+
 def main():
     global config
 
@@ -959,9 +973,12 @@ def main():
 
     init_logging()
 
+    # get source token
+    # token = get_token(config['source_config'])
+
     # list the apps for the SOURCE org
-    source_org_mgmt_url = org_management_url_template.format(org=config.get('org'),
-                                                             **config.get('source_endpoint'))
+    source_org_mgmt_url = org_management_url_template.format(org=config.get('org'), **config.get('source_endpoint'))
+
     logger.info('GET %s' % source_org_mgmt_url)
     r = requests.get(source_org_mgmt_url)
 
@@ -1106,7 +1123,7 @@ def main():
                                                                                      **config.get('source_endpoint'))
 
                     # use the UsergridQuery from the Python SDK to iterate the collection
-                    q = UsergridQuery(source_collection_url)
+                    q = UsergridQueryIterator(source_collection_url)
 
                     for entity in q:
                         if 'created' in entity:
@@ -1143,5 +1160,5 @@ def check_response_status(r, url, exit_on_error=True):
         if exit_on_error:
             exit()
 
-
-main()
+if __name__ == "__main__":
+    main()

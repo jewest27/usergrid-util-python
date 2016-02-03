@@ -8,6 +8,7 @@ __author__ = 'Jeff West @ ApigeeCorporation'
 def total_milliseconds(td):
     return (td.microseconds + td.seconds * 1000000) / 1000
 
+
 # for Apigee Developer, leave this as is.  For paid BaaS instances change this to https://{your_api_url}/[appservices]
 api_url = 'https://api.usergrid.com'
 
@@ -33,9 +34,10 @@ data_map = {
             }
         }
 }
-
 # it is generally not a good idea to delete more than 100 at a time due to latency and resource utilization
-url_template = '{api_url}/{org}/{app}/{collection}?ql=select *&limit=100'
+url_template = '{api_url}/{org}/{app}/{collection}?limit=250'
+
+session = requests.Session()
 
 
 def check_response_status(response, message='', exit_on_error=True):
@@ -52,8 +54,10 @@ def delete_all_collections(org, app, token):
 
     print 'Listing collections at URL: %s' % url
 
-    r = requests.get(url, headers={'Authorization': 'Bearer ' + token})
-    check_response_status(r, 'Unable to list collections and no collections specified to delete')
+    r = session.get(url)
+
+    if r.status_code != 200:
+        print r.text
 
     collections = []
 
@@ -75,15 +79,16 @@ def delete_collections(org, app, collections, token):
             url = url_template.format(api_url=api_url, org=org, app=app, collection=collection)
 
             try:
-                response = requests.get(url, headers=headers)
+                response = session.get(url)
                 check_response_status(response, message='Unable to GET URL: %s' % url)
 
                 count = len(response.json().get('entities'))
                 total_ms = total_milliseconds(response.elapsed)
 
                 print 'GET %s from collection %s in %s' % (count, collection, total_ms)
+                print 'Deleting...'
 
-                response = requests.delete(url)
+                response = session.delete(url)
 
                 check_response_status(response, message='UNABLE TO DELETE on URL: %s' % url)
 
@@ -123,14 +128,14 @@ for org, org_data in data_map.get('orgs', {}).iteritems():
         'client_secret': credentials.get('client_secret'),
     }
 
-    token_url = '{api_url}/{org}/management/'.format(api_url=api_url, org=org)
+    token_url = '{api_url}/management/token'.format(api_url=api_url)
 
-    r = requests.post(token_url, data=json.dumps(token_request))
+    r = session.post(token_url, data=json.dumps(token_request))
 
     check_response_status(r, message='Unable to get Token at URL %s' % token_url)
 
     token = r.json().get('access_token')
-    headers = {'Authorization': 'Bearer ' + token}
+    session.headers.update({'Authorization': 'Bearer ' + token})
 
     # iterate the apps specified in the config above
     for app, app_data in org_data.get('apps', {}).iteritems():

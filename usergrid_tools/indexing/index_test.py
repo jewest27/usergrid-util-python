@@ -24,9 +24,8 @@ entity_template = {
     }
 }
 
-# Replace these with your own org and credentials if needed.  This assumes sandbox permissioned app
-
 url_template = '{api_url}/{org}/{app}/{collection}'
+
 url_data = {
     'api_url': 'https://api.usergrid.com',
     'org': 'myorg',
@@ -180,9 +179,12 @@ def main():
                      q_url=q_url,
                      sleep_time=.25)
 
-        test_url(url + "?ql=select * where nest1.nest2.nest3 ='foo'")
+
+        test_url()
+        testVar = False
 
         test_url(url + "?ql=select * where nest1.nest2.nest3 contains 'foo*'")
+
 
         clear(clear_url=delete_q_url)
 
