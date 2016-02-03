@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 VERSION = '0.0.2'
 
 setup(
-    name='usergrid-util',
+    name='usergrid-tools',
     version=VERSION,
     description='Tools for working with Apache Usergrid',
     url='http://usergrid.apache.org',

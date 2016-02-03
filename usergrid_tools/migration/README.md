@@ -2,7 +2,14 @@
 
 ## Prerequisites
 
-Install the Usergrid Python SDK: https://github.com/jwest-apigee/usergrid-python
+* Install the Usergrid Python SDK: https://github.com/jwest-apigee/usergrid-python
+
+With Pip: `pip install usergrid`
+
+* Install Usergrid Tools
+
+With Pip: `pip install usergrid-tools`
+
 
 ## Overview
 The purpose of this document is to provide an overview of the Python Script provided in the same directory which allows you to migrate data, connections and users from one Usergrid platform / org / app to another.  This can be used in the upgrade process from Usergrid 1.0 to 2.x since there is no upgrade path.
@@ -15,7 +22,6 @@ There are multiple processes at work in the migration to speed the process up.  
 # Process to Migrate Data and Connections
 Usergrid is a Graph database and allows for connections between entities.  In order for a connection to be made, both the source entity and the target entity must exist.  Therefore, in order to migrate connections it is adviseable to first migrate all the data and then all the connections associated with that data.
 
-
 # Concepts
 As with any migration process there is a source and a target.  The source and target have the following parameters:
 
@@ -27,7 +33,6 @@ As with any migration process there is a source and a target.  The source and ta
 
 # Mapping
 Using this script it is not necessary to keep the same application name, org name and/or collection name as the source at the target.  For example, you could migrate from /myOrg/myApp/myCollection to /org123/app456/collections789.  
-
 
 
 # Configuration Files
@@ -55,7 +60,7 @@ Example source/target configuration files:
 # Command Line Parameters
 
 ```
-Usergrid Org/App Migrator
+Usergrid Org/App Data Migrator
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -102,20 +107,20 @@ optional arguments:
 Simple example to migrate all DATA in all apps from an org named 'myorg' from one endpoint to another:
 
 ```
-➜  ~  python usergrid_data_migrator.py -o myorg -m data -w 4 -s mySourceConfig.json -d myTargetConfiguration.json
+$ usergrid_data_migrator -o myorg -m data -w 4 -s mySourceConfig.json -d myTargetConfiguration.json
 ```
 
 Simple example to migrate all CONNECTIONS in all apps from an org named 'myorg' from one endpoint to another:
 
 ```
-➜  ~  python usergrid_data_migrator.py -o myorg -m connections -w 4 -s mySourceConfig.json -d myTargetConfiguration.json
+$ usergrid_data_migrator -o myorg -m connections -w 4 -s mySourceConfig.json -d myTargetConfiguration.json
 ```
 
 
 This command:
 
 ```
-➜  ~  python usergrid_data_migrator.py -o myorg -a app1 -a app2 -m data -w 4 --map_app app1:app_1 --map_app app2:app_2 --map_collection pets:animals --map_org myorg:my_new_org -s mySourceConfig.json -d myTargetConfiguration.json
+$ usergrid_data_migrator -o myorg -a app1 -a app2 -m data -w 4 --map_app app1:app_1 --map_app app2:app_2 --map_collection pets:animals --map_org myorg:my_new_org -s mySourceConfig.json -d myTargetConfiguration.json
 ```
 will do the following: 
 
