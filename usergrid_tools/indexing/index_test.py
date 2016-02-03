@@ -1,8 +1,14 @@
 import json
+import logging
 from multiprocessing import Pool
 import datetime
+
+import argparse
 import requests
 import time
+from logging.handlers import RotatingFileHandler
+
+import sys
 
 entity_template = {
     "id": "replaced",
@@ -25,20 +31,38 @@ entity_template = {
 }
 
 url_template = '{api_url}/{org}/{app}/{collection}'
+config = {}
 
-url_data = {
-    'api_url': 'https://api.usergrid.com',
-    'org': 'myorg',
-    'app': 'sandbox',
-    'collection': datetime.datetime.now().strftime('%yx%mx%dx%Hx%Mx%S')
-}
 
-url = url_template.format(**url_data)
+def init_logging(stdout_enabled=True):
+    root_logger = logging.getLogger()
+    log_file_name = './usergrid_index_test.log'
+    log_formatter = logging.Formatter(fmt='%(asctime)s | %(name)s | %(processName)s | %(levelname)s | %(message)s',
+                                      datefmt='%m/%d/%Y %I:%M:%S %p')
+
+    rotating_file = logging.handlers.RotatingFileHandler(filename=log_file_name,
+                                                         mode='a',
+                                                         maxBytes=2048576000,
+                                                         backupCount=10)
+    rotating_file.setFormatter(log_formatter)
+    rotating_file.setLevel(logging.INFO)
+
+    root_logger.addHandler(rotating_file)
+    root_logger.setLevel(logging.INFO)
+
+    logging.getLogger('urllib3.connectionpool').setLevel(logging.WARN)
+    logging.getLogger('requests.packages.urllib3.connectionpool').setLevel(logging.WARN)
+
+    if stdout_enabled:
+        stdout_logger = logging.StreamHandler(sys.stdout)
+        stdout_logger.setFormatter(log_formatter)
+        stdout_logger.setLevel(logging.INFO)
+        root_logger.addHandler(stdout_logger)
 
 
 def create_entity(entity):
-    global url
-    r = requests.post(url, data=json.dumps(entity))
+    global config
+    r = requests.post(config['url'], data=json.dumps(entity))
     entities = r.json().get('entities', [])
     uuid = entities[0].get('uuid')
 
@@ -49,10 +73,11 @@ def create_entity(entity):
 
 
 def test_multiple(number_of_entities=10):
-    global processes
+    global processes, config
+
     start = datetime.datetime.now()
 
-    print 'Creating %s entities w/ url=%s' % (number_of_entities, url)
+    print 'Creating %s entities w/ url=%s' % (number_of_entities, config['url'])
     created_map = {}
     entities = []
 
@@ -146,7 +171,6 @@ processes = Pool(32)
 
 
 def test_url(q_url, sleep_time=0.25):
-
     test_var = False
 
     while not test_var:
@@ -166,25 +190,62 @@ def test_url(q_url, sleep_time=0.25):
             time.sleep(sleep_time)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='Usergrid Indexing Latency Test')
+
+    parser.add_argument('-o', '--org',
+                        help='Name of the org to perform the test in',
+                        type=str,
+                        required=True)
+
+    parser.add_argument('-a', '--app',
+                        help='Name of the app to perform the test in',
+                        type=str,
+                        required=True)
+
+    parser.add_argument('--base_url',
+                        help='The URL of the Usergrid Instance',
+                        type=str,
+                        required=True)
+
+    my_args = parser.parse_args(sys.argv[1:])
+
+    return vars(my_args)
+
+
+def init():
+    global config
+
+    url_data = {
+        'api_url': config.get('base_url'),
+        'org': config.get('org'),
+        'app': config.get('app'),
+        'collection': datetime.datetime.now().strftime('index-test-%yx%mx%dx%Hx%Mx%S')
+    }
+
+    config['url'] = url_template.format(**url_data)
+
+
 def main():
-    global url
+    global config
+
+    config = parse_args()
+
+    init_logging()
+
+    init()
 
     try:
-        q_url = url + "?ql=select * where dataType='entitlements'&limit=1000"
-        delete_q_url = url + "?ql=select * where dataType='entitlements'&limit=1000"
 
         created_map = test_multiple(999)
+
+        q_url = config.get('url') + "?ql=select * where dataType='entitlements'&limit=1000"
 
         test_created(created_map=created_map,
                      q_url=q_url,
                      sleep_time=.25)
 
-
-        test_url()
-        testVar = False
-
-        test_url(url + "?ql=select * where nest1.nest2.nest3 contains 'foo*'")
-
+        delete_q_url = config.get('url') + "?ql=select * where dataType='entitlements'&limit=1000"
 
         clear(clear_url=delete_q_url)
 
