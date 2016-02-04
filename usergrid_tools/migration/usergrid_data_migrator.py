@@ -42,11 +42,13 @@ def init_logging(stdout_enabled=True):
     log_formatter = logging.Formatter(fmt='%(asctime)s | %(name)s | %(processName)s | %(levelname)s | %(message)s',
                                       datefmt='%m/%d/%Y %I:%M:%S %p')
 
+    stdout_logger = logging.StreamHandler(sys.stdout)
+    stdout_logger.setFormatter(log_formatter)
+    stdout_logger.setLevel(logging.CRITICAL)
+    root_logger.addHandler(stdout_logger)
+
     if stdout_enabled:
-        stdout_logger = logging.StreamHandler(sys.stdout)
-        stdout_logger.setFormatter(log_formatter)
         stdout_logger.setLevel(logging.INFO)
-        root_logger.addHandler(stdout_logger)
 
     # base log file
 
@@ -829,6 +831,21 @@ def parse_args():
                         type=int,
                         default=16)
 
+    parser.add_argument('--queue_max_size',
+                        help='The max size of entities to allow in the queue',
+                        type=int,
+                        default=100000)
+
+    parser.add_argument('--queue_watermark_high',
+                        help='The point at which publishing to the queue will PAUSE until it is at or below low watermark',
+                        type=int,
+                        default=50000)
+
+    parser.add_argument('--queue_watermark_low',
+                        help='The point at which publishing to the queue will RESUME after it has reached the high watermark',
+                        type=int,
+                        default=10000)
+
     parser.add_argument('--ql',
                         help='The QL to use in the filter for reading data from collections',
                         type=str,
@@ -971,7 +988,7 @@ def main():
     config = parse_args()
     init()
 
-    init_logging()
+    init_logging(False)
 
     # get source token
     # token = get_token(config['source_config'])
@@ -988,7 +1005,19 @@ def main():
 
     org_apps = r.json().get('data')
 
-    queue = Queue()
+    queue = Queue(maxsize=config.get('queue_size_max'))
+
+    qsize_ok = False
+
+    try:
+        x = queue.qsize()
+        qsize_ok = True
+
+    except Exception, e:
+        print traceback.format_exc(e)
+
+        logger.warning("Unable to get queue.qsize - will rely on max queue size")
+
     logger.info('Starting workers...')
 
     # Check the specified configuration for what to migrate/audit
@@ -1138,6 +1167,14 @@ def main():
                         counter += 1
                         queue.put((app, collection_name, entity))
 
+                        if counter % 10000 == 1:
+                            logger.info('Counter=%s, queue depth=%s' % (counter, queue.qsize()))
+
+                        if qsize_ok and queue.qsize() > config.get('queue_watermark_high'):
+                            while queue.qsize() > config.get('queue_watermark_low'):
+                                logger.info('WAITING to drain: Counter=%s, depth=%s' % (counter, queue.qsize()))
+                                time.sleep(5)
+
                     logger.warning('Max Created entity for org/app/collection= %s/%s/%s is %s' % (
                         config.get('org'), app, collection_name, max_created))
 
@@ -1159,6 +1196,7 @@ def check_response_status(r, url, exit_on_error=True):
 
         if exit_on_error:
             exit()
+
 
 if __name__ == "__main__":
     main()
