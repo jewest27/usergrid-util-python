@@ -118,7 +118,7 @@ def test_created(created_map, q_url, sleep_time=0.0):
     logger.info('checking number created, expecting %s....' % len(created_map))
 
     count_missing = 100
-    start = datetime.datetime.now()
+    start_time = datetime.datetime.now()
 
     while count_missing > 0:
 
@@ -127,9 +127,11 @@ def test_created(created_map, q_url, sleep_time=0.0):
         res = r.json()
         entities = res.get('entities', [])
         count_missing = (len(created_map) - len(entities))
+        now_time = datetime.datetime.now()
+        elapsed = now_time - start_time
 
-        logger.info('Found [%s] of [%s] ([%s] missing) entities at url: %s' % (
-            len(entities), len(created_map), count_missing, q_url))
+        logger.info('Found [%s] of [%s] ([%s] missing) after [%s] entities at url: %s' % (
+            len(entities), len(created_map), count_missing, elapsed, q_url))
 
         for entity in entities:
             entity_map[entity.get('uuid')] = entity
@@ -140,13 +142,12 @@ def test_created(created_map, q_url, sleep_time=0.0):
                     uuid, created_entity.get('id'), count_missing))
 
         if count_missing > 0:
-            logger.info('Waiting for indexing, Total time [%s] Sleeping for [%s]' % (
-                (datetime.datetime.now() - start), sleep_time))
+            logger.info('Waiting for indexing, Total time [%s] Sleeping for [%s]s' % (elapsed, sleep_time))
 
             time.sleep(sleep_time)
 
-    stop = datetime.datetime.now()
-    logger.info('All entities found after %s' % (stop - start))
+    stop_time = datetime.datetime.now()
+    logger.info('All entities found after %s' % (stop_time - start_time))
 
 
 def clear(clear_url):
