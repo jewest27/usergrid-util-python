@@ -86,7 +86,7 @@ def create_entity(work_item):
     return uuid, entity
 
 
-def test_multiple(number_of_entities, processes):
+def test_multiple(number_of_entities):
     global config
 
     start = datetime.datetime.now()
@@ -114,8 +114,8 @@ def test_multiple(number_of_entities, processes):
     return created_map
 
 
-def test_created(created_map, q_url, sleep_time=0.0):
-    logger.info('checking number created, expecting %s....' % len(created_map))
+def wait_for_indexing(created_map, q_url, sleep_time=0.0):
+    logger.info('Waiting for indexing of [%s] entities...' % len(created_map))
 
     count_missing = 100
     start_time = datetime.datetime.now()
@@ -177,6 +177,8 @@ def test_cleared(q_url):
 
         if len(res.get('entities', [])) != 0:
             logger.info('DID NOT CLEAR')
+
+processes = Pool(32)
 
 
 def test_url(q_url, sleep_time=0.25):
@@ -249,7 +251,7 @@ def init():
 def main():
     global config
 
-    processes = Pool(32)
+    # processes = Pool(32)
 
     config = parse_args()
 
@@ -274,13 +276,13 @@ def main():
             exit(1)
 
     try:
-        created_map = test_multiple(999, processes)
+        created_map = test_multiple(999)
 
         q_url = config.get('url') + "?ql=select * where dataType='entitlements'&limit=1000"
 
-        test_created(created_map=created_map,
-                     q_url=q_url,
-                     sleep_time=1)
+        wait_for_indexing(created_map=created_map,
+                          q_url=q_url,
+                          sleep_time=1)
 
         delete_q_url = config.get('url') + "?ql=select * where dataType='entitlements'&limit=1000"
 
