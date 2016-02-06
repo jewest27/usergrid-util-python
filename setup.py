@@ -2,7 +2,7 @@ __author__ = 'Jeff West @ ApigeeCorporation'
 
 from setuptools import setup, find_packages
 
-VERSION = '0.0.5'
+VERSION = '0.0.6'
 
 setup(
         name='usergrid-tools',
@@ -21,7 +21,8 @@ setup(
         entry_points={
             'console_scripts': [
                 'usergrid_data_migrator = usergrid_tools.migration.usergrid_data_migrator:main',
-                'usergrid_index_test = usergrid_tools.indexing.index_test:main',
+                'usergrid_entity_index_test = usergrid_tools.indexing.entity_index_test:main',
+                'usergrid_batch_index_test = usergrid_tools.indexing.batch_index_test:main',
                 'usergrid_parse_importer = usergrid_tools.parse_importer.parse_importer:main',
                 'usergrid_deleter = usergrid_tools.parse_importer.parse_importer:main',
                 'usergrid_library_check = usergrid_tools.library_check:main',

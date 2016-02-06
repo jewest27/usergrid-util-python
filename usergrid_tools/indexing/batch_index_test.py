@@ -31,7 +31,13 @@ entity_template = {
 }
 
 url_template = '{api_url}/{org}/{app}/{collection}'
+token_url_template = '{api_url}/{org}/{app}/token'
+
 config = {}
+
+session = requests.Session()
+
+logger = logging.getLogger('UsergridBatchIndexTest')
 
 
 def init_logging(stdout_enabled=True):
@@ -60,33 +66,42 @@ def init_logging(stdout_enabled=True):
         root_logger.addHandler(stdout_logger)
 
 
-def create_entity(entity):
+def create_entity(work_item):
     global config
-    r = requests.post(config['url'], data=json.dumps(entity))
+
+    url = work_item[0]
+    entity = work_item[1]
+
+    logger.info('creating entity [%s] at URL [%s]' % (entity.get('id'), url))
+
+    r = session.post(url, data=json.dumps(entity))
     entities = r.json().get('entities', [])
     uuid = entities[0].get('uuid')
 
     if r.status_code != 200:
-        print '%s: %s' % (r.status_code, uuid)
+        logger.info('%s: %s' % (r.status_code, uuid))
+    else:
+        logger.info('Created entity UUID=[%s] at URL [%s]' % (uuid, url))
 
     return uuid, entity
 
 
-def test_multiple(number_of_entities=10):
-    global processes, config
+def test_multiple(number_of_entities, processes):
+    global config
 
     start = datetime.datetime.now()
 
-    print 'Creating %s entities w/ url=%s' % (number_of_entities, config['url'])
+    logger.info('Creating %s entities w/ url=%s' % (number_of_entities, config['url']))
     created_map = {}
-    entities = []
+
+    work_items = []
 
     for x in xrange(1, number_of_entities + 1):
         entity = entity_template.copy()
         entity['id'] = str(x)
-        entities.append(entity)
+        work_items.append((config['url'], entity))
 
-    responses = processes.map(create_entity, entities)
+    responses = processes.map(create_entity, work_items)
 
     for res in responses:
         if len(res) > 0:
@@ -94,58 +109,54 @@ def test_multiple(number_of_entities=10):
 
     stop = datetime.datetime.now()
 
-    print 'Created [%s] entities in %s' % (number_of_entities, (stop - start))
+    logger.info('Created [%s] entities in %s' % (number_of_entities, (stop - start)))
 
     return created_map
 
 
-def nested_null_test():
-    pass
-
-
 def test_created(created_map, q_url, sleep_time=0.0):
-    print 'checking number created, expecting %s....' % len(created_map)
-
-    nested_null_test()
+    logger.info('checking number created, expecting %s....' % len(created_map))
 
     count_missing = 100
     start = datetime.datetime.now()
 
     while count_missing > 0:
-        count_missing = 0
 
         entity_map = {}
-        r = requests.get(q_url)
-        entities = r.json().get('entities', [])
+        r = session.get(q_url)
+        res = r.json()
+        entities = res.get('entities', [])
+        count_missing = (len(created_map) - len(entities))
 
-        print 'Found [%s] entities at url: %s' % (len(entities), q_url)
+        logger.info('Found [%s] of [%s] ([%s] missing) entities at url: %s' % (
+            len(entities), len(created_map), count_missing, q_url))
 
         for entity in entities:
             entity_map[entity.get('uuid')] = entity
 
         for uuid, created_entity in created_map.iteritems():
             if uuid not in entity_map:
-                count_missing += 1
-                # print 'Missing uuid=[%s] Id=[%s] total missing=[%s]' % (uuid, created_entity.get('id'), count_missing)
-
-        print 'total missing=[%s], url=[%s]' % (count_missing, q_url)
+                logger.debug('Missing uuid=[%s] Id=[%s] total missing=[%s]' % (
+                    uuid, created_entity.get('id'), count_missing))
 
         if count_missing > 0:
-            print 'Waiting for indexing, Sleeping for %s' % sleep_time
+            logger.info('Waiting for indexing, Total time [%s] Sleeping for [%s]' % (
+                (datetime.datetime.now() - start), sleep_time))
+
             time.sleep(sleep_time)
 
     stop = datetime.datetime.now()
-    print 'All entities found after %s' % (stop - start)
+    logger.info('All entities found after %s' % (stop - start))
 
 
 def clear(clear_url):
-    print 'deleting.... ' + clear_url
+    logger.info('deleting.... ' + clear_url)
 
-    r = requests.delete(clear_url)
+    r = session.delete(clear_url)
 
     if r.status_code != 200:
-        print 'error deleting url=' + clear_url
-        print json.dumps(r.json())
+        logger.info('error deleting url=' + clear_url)
+        logger.info(json.dumps(r.json()))
 
     else:
         res = r.json()
@@ -156,37 +167,34 @@ def clear(clear_url):
 
 
 def test_cleared(q_url):
-    r = requests.get(q_url)
+    r = session.get(q_url)
 
     if r.status_code != 200:
-        print json.dumps(r.json())
+        logger.info(json.dumps(r.json()))
     else:
         res = r.json()
 
         if len(res.get('entities', [])) != 0:
-            print 'DID NOT CLEAR'
-
-
-processes = Pool(32)
+            logger.info('DID NOT CLEAR')
 
 
 def test_url(q_url, sleep_time=0.25):
     test_var = False
 
     while not test_var:
-        r = requests.get(q_url)
+        r = session.get(q_url)
 
         if r.status_code == 200:
 
             if len(r.json().get('entities')) >= 1:
                 test_var = True
         else:
-            print 'non 200'
+            logger.info('non 200')
 
         if test_var:
-            print 'Test of URL [%s] Passes'
+            logger.info('Test of URL [%s] Passes')
         else:
-            print 'Test of URL [%s] Passes'
+            logger.info('Test of URL [%s] Passes')
             time.sleep(sleep_time)
 
 
@@ -208,6 +216,16 @@ def parse_args():
                         type=str,
                         required=True)
 
+    parser.add_argument('--client_id',
+                        help='The Client ID to get a token, if needed',
+                        type=str,
+                        required=False)
+
+    parser.add_argument('--client_secret',
+                        help='The Client Secret to get a token, if needed',
+                        type=str,
+                        required=False)
+
     my_args = parser.parse_args(sys.argv[1:])
 
     return vars(my_args)
@@ -224,26 +242,44 @@ def init():
     }
 
     config['url'] = url_template.format(**url_data)
+    config['token_url'] = token_url_template.format(**url_data)
 
 
 def main():
     global config
 
-    config = parse_args()
+    processes = Pool(32)
 
-    init_logging()
+    config = parse_args()
 
     init()
 
-    try:
+    init_logging()
 
-        created_map = test_multiple(999)
+    if config.get('client_id') is not None and config.get('client_secret') is not None:
+        token_request = {
+            'grant_type': 'client_credentials',
+            'client_id': config.get('client_id'),
+            'client_secret': config.get('client_secret')
+        }
+
+        r = session.post(config.get('token_url'), json.dumps(token_request))
+
+        if r.status_code == 200:
+            access_token = r.json().get('access_token')
+            session.headers.update({'Authorization': 'Bearer %s' % access_token})
+        else:
+            logger.critical('unable to get token: %s' % r.text)
+            exit(1)
+
+    try:
+        created_map = test_multiple(999, processes)
 
         q_url = config.get('url') + "?ql=select * where dataType='entitlements'&limit=1000"
 
         test_created(created_map=created_map,
                      q_url=q_url,
-                     sleep_time=.25)
+                     sleep_time=1)
 
         delete_q_url = config.get('url') + "?ql=select * where dataType='entitlements'&limit=1000"
 
