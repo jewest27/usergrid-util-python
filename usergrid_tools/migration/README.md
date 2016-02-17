@@ -1,6 +1,7 @@
 # Usergrid Data Migrator
 
 ## Prerequisites
+* Python 2 (not python 3)
 
 * Install the Usergrid Python SDK: https://github.com/jwest-apigee/usergrid-python
 
