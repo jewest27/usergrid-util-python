@@ -2,13 +2,8 @@
 
 ## Prerequisites
 
-* Install the Usergrid Python SDK: https://github.com/jwest-apigee/usergrid-python
-
-With Pip: `pip install usergrid`
-
-* Install Usergrid Tools
-
-With Pip: `pip install usergrid-tools`
+* Install the Usergrid Python SDK: `pip install usergrid`
+* Install Usergrid Tools: `pip install usergrid-tools`
 
 
 ## Overview
