@@ -1634,7 +1634,9 @@ def main():
             logger.info('GET %s' % source_org_mgmt_url)
             r = session_source.get(source_org_mgmt_url)
 
-            check_response_status(r, source_org_mgmt_url)
+            if r.status_code != 200:
+                logger.critical('Abort processing: Unable to retrieve apps from [%s]: %s' % (source_org_mgmt_url, r.text))
+                exit()
 
             logger.info(json.dumps(r.text))
 
