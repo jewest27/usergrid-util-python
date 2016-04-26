@@ -339,6 +339,7 @@ class EntityWorker(Process):
                         raise e
 
                     except Exception, e:
+                        logger.exception('Error in EntityWorker processing message')
                         print traceback.format_exc()
 
             except KeyboardInterrupt, e:
@@ -353,6 +354,7 @@ class EntityWorker(Process):
                     keep_going = False
 
             except Exception, e:
+                logger.exception('Error in EntityWorker run()')
                 print traceback.format_exc()
 
 
@@ -517,6 +519,7 @@ class CollectionWorker(Process):
                         keep_going = False
 
                 except Exception, e:
+                    logger.exception('Error in CollectionWorker processing collection [%s]' % collection_name)
                     print traceback.format_exc()
 
         finally:
@@ -1619,16 +1622,16 @@ def main():
     }
 
     if len(org_apps) == 0:
+        source_org_mgmt_url = org_management_url_template.format(org=config.get('org'),
+                                                                 limit=config.get('limit'),
+                                                                 **config.get('source_endpoint'))
+
+        print 'Retrieving apps from [%s]' % source_org_mgmt_url
+        logger.info('Retrieving apps from [%s]' % source_org_mgmt_url)
+
         try:
             # list the apps for the SOURCE org
-            source_org_mgmt_url = org_management_url_template.format(org=config.get('org'),
-                                                                     limit=config.get('limit'),
-                                                                     **config.get('source_endpoint'))
-
-            print 'Retrieving apps from [%s]' % source_org_mgmt_url
-            logger.info('Retrieving apps from [%s]' % source_org_mgmt_url)
-
-            # logger.info('GET %s' % source_org_mgmt_url)
+            logger.info('GET %s' % source_org_mgmt_url)
             r = session_source.get(source_org_mgmt_url)
 
             check_response_status(r, source_org_mgmt_url)
@@ -1637,9 +1640,11 @@ def main():
 
             org_apps = r.json().get('data')
 
-        except:
+        except Exception, e:
+            logger.exception('ERROR Retrieving apps from [%s]' % source_org_mgmt_url)
             print traceback.format_exc()
-            org_apps = {'foo/favourites': 'foo'}
+            logger.critical('Unable to retrieve apps from [%s] and will exit' % source_org_mgmt_url)
+            exit()
 
     if _platform == "linux" or _platform == "linux2":
         entity_queue = Queue(maxsize=config.get('queue_size_max'))
