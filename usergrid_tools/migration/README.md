@@ -42,8 +42,7 @@ Example source/target configuration files:
 ```
 {
   "endpoint": {
-    "api_url": "https://api.usergrid.com",
-    "limit": 100
+    "api_url": "https://api.usergrid.com"
   },
   "credentials": {
     "myOrg": {
@@ -65,28 +64,83 @@ Usergrid Org/App Data Migrator
 
 optional arguments:
   -h, --help            show this help message and exit
+  --log_dir LOG_DIR     path to the place where logs will be written
+  --log_level LOG_LEVEL
+                        log level - DEBUG, INFO, WARN, ERROR, CRITICAL
   -o ORG, --org ORG     Name of the org to migrate
   -a APP, --app APP     Name of one or more apps to include, specify none to
                         include all apps
+  -e INCLUDE_EDGE, --include_edge INCLUDE_EDGE
+                        Name of one or more edges/connection types to INCLUDE,
+                        specify none to include all edges
+  --exclude_edge EXCLUDE_EDGE
+                        Name of one or more edges/connection types to EXCLUDE,
+                        specify none to include all edges
+  --exclude_collection EXCLUDE_COLLECTION
+                        Name of one or more collections to EXCLUDE, specify
+                        none to include all collections
   -c COLLECTION, --collection COLLECTION
                         Name of one or more collections to include, specify
                         none to include all collections
-  -m {data,connections,credentials,none}, --migrate {data,connections,credentials,none}
+  --use_name_for_collection USE_NAME_FOR_COLLECTION
+                        Name of one or more collections to use [name] instead
+                        of [uuid] for creating entities and edges
+  -m {data,none,reput,credentials,graph}, --migrate {data,none,reput,credentials,graph}
                         Specifies what to migrate: data, connections,
-                        credentials or none (just iterate the
+                        credentials, audit or none (just iterate the
                         apps/collections)
   -s SOURCE_CONFIG, --source_config SOURCE_CONFIG
                         The path to the source endpoint/org configuration file
   -d TARGET_CONFIG, --target_config TARGET_CONFIG
                         The path to the target endpoint/org configuration file
-  -w WORKERS, --workers WORKERS
+  --limit LIMIT         The number of entities to return per query request
+  -w ENTITY_WORKERS, --entity_workers ENTITY_WORKERS
                         The number of worker processes to do the migration
+  --visit_cache_ttl VISIT_CACHE_TTL
+                        The TTL of the cache of visiting nodes in the graph
+                        for connections
+  --error_retry_sleep ERROR_RETRY_SLEEP
+                        The number of seconds to wait between retrieving after
+                        an error
+  --page_sleep_time PAGE_SLEEP_TIME
+                        The number of seconds to wait between retrieving pages
+                        from the UsergridQueryIterator
+  --entity_sleep_time ENTITY_SLEEP_TIME
+                        The number of seconds to wait between retrieving pages
+                        from the UsergridQueryIterator
+  --collection_workers COLLECTION_WORKERS
+                        The number of worker processes to do the migration
+  --queue_size_max QUEUE_SIZE_MAX
+                        The max size of entities to allow in the queue
+  --graph_depth GRAPH_DEPTH
+                        The graph depth to traverse to copy
+  --queue_watermark_high QUEUE_WATERMARK_HIGH
+                        The point at which publishing to the queue will PAUSE
+                        until it is at or below low watermark
+  --min_modified MIN_MODIFIED
+                        Break when encountering a modified date before this,
+                        per collection
+  --max_modified MAX_MODIFIED
+                        Break when encountering a modified date after this,
+                        per collection
+  --queue_watermark_low QUEUE_WATERMARK_LOW
+                        The point at which publishing to the queue will RESUME
+                        after it has reached the high watermark
   --ql QL               The QL to use in the filter for reading data from
                         collections
+  --skip_cache_read     Skip reading the cache (modified timestamps and graph
+                        edges)
+  --skip_cache_write    Skip updating the cache with modified timestamps of
+                        entities and graph edges
+  --create_apps         Create apps at the target if they do not exist
+  --nohup               specifies not to use stdout for logging
+  --graph               Use GRAPH instead of Query
   --su_username SU_USERNAME
                         Superuser username
   --su_password SU_PASSWORD
                         Superuser Password
+  --inbound_connections
+                        Name of the org to migrate
   --map_app MAP_APP     Multiple allowed: A colon-separated string such as
                         'apples:oranges' which indicates to put data from the
                         app named 'apples' from the source endpoint into app
