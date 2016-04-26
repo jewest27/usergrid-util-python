@@ -1372,33 +1372,23 @@ def parse_args():
                         default='select * order by created asc')
     # default='select * order by created asc')
 
-    parser.add_argument('--skip_cache',
-                        dest='skip_cache',
-                        action='store_true')
-
     parser.add_argument('--skip_cache_read',
+                        help='Skip reading the cache (modified timestamps and graph edges)',
                         dest='skip_cache_read',
                         action='store_true')
 
     parser.add_argument('--skip_cache_write',
+                        help='Skip updating the cache with modified timestamps of entities and graph edges',
                         dest='skip_cache_write',
                         action='store_true')
 
     parser.add_argument('--create_apps',
+                        help='Create apps at the target if they do not exist',
                         dest='create_apps',
                         action='store_true')
 
-    parser.add_argument('--with_data',
-                        dest='with_data',
-                        action='store_true')
-
     parser.add_argument('--nohup',
-                        dest='specifies not to use stdout for logging',
-                        action='store_true')
-
-    parser.add_argument('--repair',
-                        help='Attempt to migrate missing data',
-                        dest='repair',
+                        help='specifies not to use stdout for logging',
                         action='store_true')
 
     parser.add_argument('--graph',
