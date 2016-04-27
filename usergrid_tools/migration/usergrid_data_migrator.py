@@ -1595,7 +1595,12 @@ def main():
     init_logging()
 
     try:
+        # this does not try to connect to redis
         cache = redis.StrictRedis(host='localhost', port=6379, db=0)
+
+        # this is necessary to test the connection to redis
+        cache.get('usergrid')
+
     except:
         logger.error('Error connecting to Redis cache, consider using Redis to be able to optimize the process...')
         logger.error('Error connecting to Redis cache, consider using Redis to be able to optimize the process...')
