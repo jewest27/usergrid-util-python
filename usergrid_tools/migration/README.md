@@ -82,9 +82,9 @@ Example source/target configuration files:
 ```
 * api_url: the API URL to access/write data
 * Credentials:
-** For each org, with the org name (case-sensetive) as the key:
-*** client_id - the org-level Client ID. This can be retrieved from the BaaS/Usergrid Portal.
-*** client_secret - the org-level Client Secret. This can be retrieved from the BaaS/Usergrid Portal.
+ * For each org, with the org name (case-sensetive) as the key:
+  * client_id - the org-level Client ID. This can be retrieved from the BaaS/Usergrid Portal.
+  * client_secret - the org-level Client Secret. This can be retrieved from the BaaS/Usergrid Portal.
 
 # Command Line Parameters
 
