@@ -51,6 +51,8 @@ There are two options to prevent getting stuck in a loop:
 
 Redis can be used for the following:
 
+If using Redis, version 2.8+ is needed because TTL is used with the 'ex' parameter.
+
 * Keeping track of the modified date for each entity.  When running the script subsequent times after this, entiites which were not modified will not be copied.
 * Keeping track of visited nodes for migrating a graph.  This is done with a TTL such that a job can be resumed, but since there is no modified date on an edge you cannot know if there are new edges or not.  Therefore, when the TTL expires the nodes will be visited again
 * Keeping track of the URLs for the connections which are created between entities.  This has no TTL.  Subsequent runs will not create connections which are found in Redis which have already been created.
