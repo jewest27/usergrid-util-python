@@ -1324,12 +1324,12 @@ def parse_args():
     parser.add_argument('--page_sleep_time',
                         help='The number of seconds to wait between retrieving pages from the UsergridQueryIterator',
                         type=float,
-                        default=.5)
+                        default=0)
 
     parser.add_argument('--entity_sleep_time',
                         help='The number of seconds to wait between retrieving pages from the UsergridQueryIterator',
                         type=float,
-                        default=.1)
+                        default=0)
 
     parser.add_argument('--collection_workers',
                         help='The number of worker processes to do the migration',

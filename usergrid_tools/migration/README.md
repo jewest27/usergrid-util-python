@@ -20,7 +20,7 @@ This script functions by taking source and target endpoint configurations (with 
 There are multiple processes at work in the migration to speed the process up.  There is a main thread which reads entities from the API and then publishes the entities with metadata into a Python Queue which has multiple worker processes listening for work.  The number of worker threads is configurable by command line parameters.
 
 
-# Process to Migrate Data and Connections
+# Process to Migrate Data and Graph (Connections)
 Usergrid is a Graph database and allows for connections between entities.  In order for a connection to be made, both the source entity and the target entity must exist.  Therefore, in order to migrate connections it is adviseable to first migrate all the data and then all the connections associated with that data.
 
 # Concepts
@@ -28,9 +28,33 @@ As with any migration process there is a source and a target.  The source and ta
 
 * API URL: The HTTP[S] URL where the platform can be reached
 * Org: You must specify one org at a time to migrate using this script
-* App: You can specify one or more applications to migrate.  If you specify zero applications then all applications will be migrated
-* Collection: You can specify one or more collections to migrate.  If you specify zero collections then all applications will be migrated
+* App: You can optinally specify one or more applications to migrate.  If you specify zero applications then all applications will be migrated
+* Collection: You can optionally specify one or more collections to migrate.  If you specify zero collections then all applications will be migrated
 * QL: You can specify a Query Language predicate to be used.  If none is specified, 'select *' will be used which will migrate all data within a given collection
+* Graph: Graph implies traversal of graph edges which necessarily must exist.  This is an alternative to using query which uses the indexing.  
+
+# Graph Loops
+
+When iterating a graph it is possible to get stuck in a loop.  For example:
+
+```
+A --follows--> B
+B --likes--> C
+C --loves--> A
+```
+
+There are two options to prevent getting stuck in a loop:
+* `graph_depth` option - this will limit the graph depth which will be traversed from a given entity.
+* And/Or Marking nodes and edges as 'visited'.  This requires a place to store this state.  See Using Redis in the next section
+
+# Using Redis 
+
+Redis can be used for the following:
+
+* Keeping track of the modified date for each entity.  When running the script subsequent times after this, entiites which were not modified will not be copied.
+* Keeping track of visited nodes for migrating a graph.  This is done with a TTL such that a job can be resumed, but since there is no modified date on an edge you cannot know if there are new edges or not.  Therefore, when the TTL expires the nodes will be visited again
+* Keeping track of the URLs for the connections which are created between entities.  This has no TTL.  Subsequent runs will not create connections which are found in Redis which have already been created.
+
 
 # Mapping
 Using this script it is not necessary to keep the same application name, org name and/or collection name as the source at the target.  For example, you could migrate from /myOrg/myApp/myCollection to /org123/app456/collections789.  
@@ -45,17 +69,22 @@ Example source/target configuration files:
     "api_url": "https://api.usergrid.com"
   },
   "credentials": {
-    "myOrg": {
-      "client_id": "foo",
-      "client_secret": "bar"
+    "myOrg1": {
+      "client_id": "YXA6lpg9sEaaEeONxG0g3Uz44Q",
+      "client_secret": "ZdF66u2h3Hc7csOcsEtgewmxalB1Ygg"
+    },
+    "myOrg2": {
+      "client_id": "ZXf63p239sDaaEeONSG0g3Uz44Z",
+      "client_secret": "ZdF66u2h3Hc7csOcsEtgewmxajsadfj32"
     }
   }
 }
 ```
 * api_url: the API URL to access/write data
-* limit: Specify the limit of pages to retrieve
 * Credentials:
-** client ID/Secret for each org inlcuded
+** For each org, with the org name (case-sensetive) as the key:
+*** client_id - the org-level Client ID. This can be retrieved from the BaaS/Usergrid Portal.
+*** client_secret - the org-level Client Secret. This can be retrieved from the BaaS/Usergrid Portal.
 
 # Command Line Parameters
 
@@ -159,31 +188,36 @@ optional arguments:
 
 ## Example Command Line
 
-Simple example to migrate all DATA in all apps from an org named 'myorg' from one endpoint to another:
+Use the following command to migrate DATA AND GRAPH  (no graph edges or connections between entities).  If there are no graph edges (connections) then using `-m graph` is not necessary.  This will copy all data from all apps in the org 'myorg', creating apps in the target org if they do not already exist.  Note that --create_apps will be required if the Apps in the target org have not been created.
 
 ```
-$ usergrid_data_migrator -o myorg -m data -w 4 -s mySourceConfig.json -d myTargetConfiguration.json
+$ usergrid_data_migrator -o myorg -m graph -w 4 -s mySourceConfig.json -d myTargetConfiguration.json  --create_apps
 ```
 
-Simple example to migrate all CONNECTIONS in all apps from an org named 'myorg' from one endpoint to another:
+Use the following command to migrate DATA ONLY (no graph edges or connections between entities).  This will copy all data from all apps in the org 'myorg', creating apps in the target org if they do not already exist.  Note that --create_apps will be required if the Apps in the target org have not been created.
 
 ```
-$ usergrid_data_migrator -o myorg -m connections -w 4 -s mySourceConfig.json -d myTargetConfiguration.json
+$ usergrid_data_migrator -o myorg -m data -w 4 -s mySourceConfig.json -d myTargetConfiguration.json --create_apps
 ```
 
+Use the following command to migrate CREDENTIALS for Application-level Users.  Note that `usergrid.sysadmin.login.allowed=true` must be set in the `usergrid-deployment.properties` file on the source and target Tomcat nodes.
+
+```
+$ usergrid_data_migrator -o myorg -m credentails -w 4 -s mySourceConfig.json -d myTargetConfiguration.json --create_apps --su_username foo --su_password bar
+```
 
 This command:
 
 ```
-$ usergrid_data_migrator -o myorg -a app1 -a app2 -m data -w 4 --map_app app1:app_1 --map_app app2:app_2 --map_collection pets:animals --map_org myorg:my_new_org -s mySourceConfig.json -d myTargetConfiguration.json
+$ usergrid_data_migrator -o myorg -a app1 -a app2 -m data -w 4 --map_app app1:appplication_1 --map_app app2:application_2 --map_collection pets:animals --map_org myorg:my_new_org -s mySourceConfig.json -d myTargetConfiguration.json
 ```
 will do the following: 
 
 * migrate Apps named 'app1' and 'app2' in org named 'myorg' from the API endpoint defined in 'mySourceConfig.json' to the API endpoint defined in 'myTargetConfiguration.json'
 * In the process:
 ** data from 'myorg' will ge migrated to the org named 'my_new_org'
-** data from 'app1' will be migrated to the app named 'app_1'
-** data from 'app2' will be migrated to the app named 'app_2'
+** data from 'app1' will be migrated to the app named 'application_1'
+** data from 'app2' will be migrated to the app named 'application_2'
 ** all collections named 'pets' will be overridden at the destination to 'animals'
 
 
