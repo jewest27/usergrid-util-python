@@ -5,11 +5,11 @@
 
 * Install the Usergrid Python SDK: https://github.com/jwest-apigee/usergrid-python
 
-With Pip: `pip install usergrid`
+With Pip (requires python-pip to be installed): `pip install usergrid`
 
 * Install Usergrid Tools
 
-With Pip: `pip install usergrid-tools`
+With Pip (requires python-pip to be installed): `pip install usergrid-tools`
 
 
 ## Overview
@@ -50,6 +50,8 @@ There are two options to prevent getting stuck in a loop:
 # Using Redis 
 
 Redis can be used for the following:
+
+If using Redis, version 2.8+ is needed because TTL is used with the 'ex' parameter.
 
 * Keeping track of the modified date for each entity.  When running the script subsequent times after this, entiites which were not modified will not be copied.
 * Keeping track of visited nodes for migrating a graph.  This is done with a TTL such that a job can be resumed, but since there is no modified date on an edge you cannot know if there are new edges or not.  Therefore, when the TTL expires the nodes will be visited again
