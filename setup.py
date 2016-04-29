@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 __author__ = 'Jeff West @ ApigeeCorporation'
 
-VERSION = '0.2.0'
+VERSION = '0.2.1'
 
 setup(
         name='usergrid-tools',
@@ -19,7 +19,7 @@ setup(
             'time_uuid',
             'argparse',
             'redis',
-            'cloghandler',
+            'ConcurrentLogHandler',
         ],
 
         entry_points={
