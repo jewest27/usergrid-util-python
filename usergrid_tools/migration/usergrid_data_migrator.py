@@ -700,21 +700,27 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
                 cache.set(create_connection_url, create_connection_url)
 
             return True
+        else:
+            if r_create.status_code >= 500:
 
-        elif r_create.status_code >= 500:
+                if attempts < 5:
+                    logger.warning('FAILED [%s] (will retry) to create connection at URL=[%s]: %s' % (
+                        r_create.status_code, create_connection_url, r_create.text))
+                    time.sleep(DEFAULT_RETRY_SLEEP)
+                else:
+                    logger.critical(
+                            'FAILED [%s] (WILL NOT RETRY - max attempts) to create connection at URL=[%s]: %s' % (
+                                r_create.status_code, create_connection_url, r_create.text))
+                    return False
 
-            if attempts < 5:
-                logger.warning('FAILED (will retry) to create connection at URL=[%s]: %s' % (
-                    create_connection_url, r_create.text))
-                time.sleep(DEFAULT_RETRY_SLEEP)
-            else:
+            elif r_create.status_code in [401, 404]:
                 logger.critical(
                         'FAILED [%s] (WILL NOT RETRY - max attempts) to create connection at URL=[%s]: %s' % (
                             r_create.status_code, create_connection_url, r_create.text))
                 return False
-
-        elif r_create.status_code in [401, 404]:
-            return False
+            else:
+                logger.warning('FAILED [%s] (will retry) to create connection at URL=[%s]: %s' % (
+                    r_create.status_code, create_connection_url, r_create.text))
 
     return False
 
@@ -912,7 +918,6 @@ def migrate_in_graph_edge_type(app, collection_name, source_entity, edge_name, d
 
 
 def migrate_graph(app, collection_name, source_entity, depth=0):
-
     depth += 1
     source_uuid = source_entity.get('uuid')
 
@@ -926,8 +931,6 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
     if exclude_collection(collection_name):
         logger.warn('Ignoring entity in filtered collection [%s]' % collection_name)
         return True
-
-
 
     key = '%s:graph:%s' % (key_version, source_uuid)
     entity_tag = '[%s / %s / %s (%s)]' % (app, collection_name, source_uuid, get_uuid_time(source_uuid))
