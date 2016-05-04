@@ -752,7 +752,7 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
     if not config.get('skip_cache_write', False):
         cache.set(name=key, value=str(datetime.datetime.utcnow()), ex=config.get('visit_cache_ttl', 3600 * 12))
 
-    logger.info('Visiting EDGE [%s / %s (%s) --%s-->] at %s' % (
+    logger.debug('Visiting EDGE [%s / %s (%s) --%s-->] at %s' % (
         collection_name, source_uuid, get_uuid_time(source_uuid), edge_name, str(datetime.datetime.utcnow())))
 
     response = True
@@ -877,7 +877,7 @@ def migrate_in_graph_edge_type(app, collection_name, source_entity, edge_name, d
     if not config.get('skip_cache_write', False):
         cache.set(name=key, value=str(datetime.datetime.utcnow()), ex=config.get('visit_cache_ttl', 3600 * 12))
 
-    logger.info('Visiting EDGE [--%s--> %s / %s (%s)] at %s' % (
+    logger.debug('Visiting EDGE [--%s--> %s / %s (%s)] at %s' % (
         edge_name, collection_name, source_uuid, get_uuid_time(source_uuid), str(datetime.datetime.utcnow())))
 
     source_identifier = get_source_identifier(source_entity)
@@ -939,7 +939,7 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
         date_visited = cache.get(key)
 
         if date_visited not in [None, 'None']:
-            logger.info('Skipping GRAPH %s at %s' % (entity_tag, date_visited))
+            logger.debug('Skipping GRAPH %s at %s' % (entity_tag, date_visited))
             return True
         else:
             cache.delete(key)
