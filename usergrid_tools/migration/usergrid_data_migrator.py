@@ -560,9 +560,7 @@ def include_edge(collection_name, edge_name):
                 'Skipping edge [%s] since it is in EXCLUDED list: %s' % (edge_name, exclude_edges))
         return False
 
-    if (collection_name in ['users', 'user'] and edge_name in ['roles', 'followers', 'groups',
-                                                               'feed', 'activities']) \
-            or (collection_name in ['device', 'devices'] and edge_name in ['users']) \
+    if (collection_name in ['users', 'user'] and edge_name in ['followers', 'feed', 'activities']) \
             or (collection_name in ['receipts', 'receipt'] and edge_name in ['device', 'devices']):
         # feed and activities are not retrievable...
         # roles and groups will be more efficiently handled from the role/group -> user
@@ -832,7 +830,6 @@ def migrate_in_graph_edge_type(app, collection_name, source_entity, edge_name, d
 
 
 def migrate_graph(app, collection_name, source_entity, depth=0):
-
     # short circuit if the graph depth exceeds what was specified
     if depth > config.get('graph_depth', 1):
         logger.debug('Reached Max Graph Depth, stopping after [%s]' % depth)
@@ -1112,7 +1109,6 @@ def migrate_permissions(app, collection_name, source_entity, attempts=0):
 
 
 def migrate_data(app, collection_name, source_entity, attempts=0):
-
     # check the cache to see if this entity has changed
     if not config.get('skip_cache_read', False):
         try:
@@ -1171,7 +1167,6 @@ def migrate_data(app, collection_name, source_entity, attempts=0):
         r = session_target.put(url=target_entity_url_by_name, data=json.dumps(entity_copy))
 
         if attempts > 1:
-            logger.warn(traceback.print_stack())
             logger.warn('Attempt [%s] to migrate entity [%s / %s] at URL [%s]' % (
                 attempts, collection_name, source_identifier, target_entity_url_by_name))
         else:
@@ -1725,7 +1720,6 @@ def count_bytes(entity):
 
 
 def migrate_user_credentials(app, collection_name, source_entity, attempts=0):
-
     # this only applies to users
     if collection_name not in ['users', 'user']:
         return False
@@ -1833,7 +1827,6 @@ def do_operation(apps_and_collections, operation):
 
             # iterate the collections which are returned.
             for collection_name in app_data.get('collections'):
-
                 logger.info('Publishing app / collection: %s / %s' % (app, collection_name))
 
                 collection_count += 1
