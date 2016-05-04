@@ -577,6 +577,27 @@ def include_edge(collection_name, edge_name):
     return True
 
 
+def exclude_edge(collection_name, edge_name):
+    exclude_edges = config.get('exclude_edge', [])
+
+    if exclude_edges is None:
+        exclude_edges = []
+
+    if edge_name in exclude_edges:
+        logger.debug('Skipping edge [%s] since it is in EXCLUDED list: %s' % (edge_name, exclude_edges))
+        return True
+
+    if (collection_name in ['users', 'user'] and edge_name in ['followers', 'feed', 'activities']) \
+            or (collection_name in ['receipts', 'receipt'] and edge_name in ['device', 'devices']):
+        # feed and activities are not retrievable...
+        # roles and groups will be more efficiently handled from the role/group -> user
+        # followers will be handled by 'following'
+        # do only this from user -> device
+        return True
+
+    return False
+
+
 def confirm_user_entity(app, source_entity, attempts=0):
     attempts += 1
 
@@ -633,7 +654,16 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
         source_type_id = '%s/%s' % ('users', source_entity.get('username'))
 
     if target_entity.get('type') == 'user':
-        target_type_id = '%s/%s' % ('users', target_entity.get('uuid'))
+        if edge_name == 'users':
+            target_type_id = target_entity.get('uuid')
+        else:
+            target_type_id = '%s/%s' % ('users', target_entity.get('uuid'))
+
+    if target_entity.get('type') == 'device':
+        if edge_name == 'devices':
+            target_type_id = target_entity.get('uuid')
+        else:
+            target_type_id = '%s/%s' % ('devices', target_entity.get('uuid'))
 
     create_connection_url = connection_create_by_pairs_url_template.format(
             org=target_org,
@@ -690,8 +720,6 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
 
 
 def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, depth=0):
-    depth += 1
-
     if not include_edge(collection_name, edge_name):
         return True
 
@@ -764,8 +792,7 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
 
         target_entity = connection_stack.pop()
 
-        if collection_name in config.get('exclude_collection', []) or target_entity.get('type') in config.get(
-                'exclude_collection', []):
+        if exclude_collection(collection_name) or exclude_collection(target_entity.get('type')):
             logger.debug('EXCLUDING Edge (collection): [%s / %s / %s] --[%s]--> [%s / %s / %s]' % (
                 app, collection_name, source_identifier, edge_name, target_app, target_entity.get('type'),
                 target_entity.get('name')))
@@ -813,7 +840,6 @@ def include_collection(collection_name):
 
 
 def exclude_collection(collection_name):
-
     exclude = config.get('exclude_collection', [])
 
     if exclude is not None and collection_name in exclude:
@@ -886,9 +912,13 @@ def migrate_in_graph_edge_type(app, collection_name, source_entity, edge_name, d
 
 
 def migrate_graph(app, collection_name, source_entity, depth=0):
+
+    depth += 1
+    source_uuid = source_entity.get('uuid')
+
     # short circuit if the graph depth exceeds what was specified
     if depth > config.get('graph_depth', 1):
-        logger.debug('Reached Max Graph Depth, stopping after [%s]' % depth)
+        logger.info('Reached Max Graph Depth, stopping after [%s] on [%s / %s]' % (depth, collection_name, source_uuid))
         return True
     else:
         logger.debug('Processing @ Graph Depth [%s]' % depth)
@@ -897,7 +927,7 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
         logger.warn('Ignoring entity in filtered collection [%s]' % collection_name)
         return True
 
-    source_uuid = source_entity.get('uuid')
+
 
     key = '%s:graph:%s' % (key_version, source_uuid)
     entity_tag = '[%s / %s / %s (%s)]' % (app, collection_name, source_uuid, get_uuid_time(source_uuid))
@@ -927,7 +957,8 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
 
     # migrate each outbound edge type
     for edge_name in out_edge_names:
-        if include_edge(collection_name, edge_name):
+
+        if not exclude_edge(collection_name, edge_name):
             response = migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name,
                                                    depth) and response
     # gather the inbound edge names
@@ -937,7 +968,8 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
 
     # migrate each inbound edge type
     for edge_name in in_edge_names:
-        if include_edge(collection_name, edge_name):
+
+        if not exclude_edge(collection_name, edge_name):
             response = migrate_in_graph_edge_type(app, collection_name, source_entity, edge_name,
                                                   depth) and response
 
@@ -1165,6 +1197,9 @@ def migrate_permissions(app, collection_name, source_entity, attempts=0):
 
 
 def migrate_data(app, collection_name, source_entity, attempts=0):
+    if config.get('skip_data'):
+        return True
+
     # check the cache to see if this entity has changed
     if not config.get('skip_cache_read', False):
         try:
@@ -1618,6 +1653,10 @@ def parse_args():
                         type=str,
                         default='select * order by created asc')
     # default='select * order by created asc')
+
+    parser.add_argument('--skip_data',
+                        help='Skip migrating data (useful for connections only)',
+                        action='store_true')
 
     parser.add_argument('--skip_credentials',
                         help='Skip migrating credentials',

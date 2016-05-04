@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 __author__ = 'Jeff West @ ApigeeCorporation'
 
-VERSION = '0.2.1'
+VERSION = '0.3.1'
 
 setup(
         name='usergrid-tools',
@@ -12,7 +12,10 @@ setup(
         download_url="https://codeload.github.com/jwest-apigee/usergrid-util-python/zip/%s" % VERSION,
         author='Jeff West',
         author_email='jwest@apigee.com',
-        packages=['usergrid_tools', 'es_tools'],
+
+        # packages=['usergrid_tools', 'es_tools'],
+        packages=find_packages(exclude=["*.tests", "*.tests.*", "tests.*", "tests", "sandbox"]),
+
         install_requires=[
             'requests',
             'usergrid>=0.1.3',
