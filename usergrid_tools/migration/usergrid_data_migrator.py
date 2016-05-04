@@ -653,9 +653,9 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
                 e_connection.get('name')))
             return True
 
-        if e_connection.get('type') != 'device' \
-                and 'name' in e_connection \
-                and use_name_for_collection(e_connection.get('type')):
+        if use_name_for_collection(e_connection.get('type')):
+
+            target_id = get_source_identifier(e_connection)
 
             create_connection_url = connection_create_by_name_url_template.format(
                     org=target_org,
@@ -664,7 +664,7 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
                     uuid=source_identifier,
                     verb=edge_name,
                     target_type=e_connection.get('type'),
-                    target_name=e_connection.get('name', ),
+                    target_name=target_id,
                     **config.get('target_endpoint'))
         else:
             create_connection_url = connection_create_by_uuid_url_template.format(
