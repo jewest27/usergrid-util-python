@@ -653,11 +653,9 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
                 e_connection.get('name')))
             return True
 
-        if use_name_for_collection(e_connection.get('type')):
+        target_id = get_source_identifier(e_connection)
 
-            target_id = get_source_identifier(e_connection)
-
-            create_connection_url = connection_create_by_name_url_template.format(
+        create_connection_url = connection_create_by_name_url_template.format(
                     org=target_org,
                     app=target_app,
                     collection=target_collection,
@@ -665,15 +663,6 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
                     verb=edge_name,
                     target_type=e_connection.get('type'),
                     target_name=target_id,
-                    **config.get('target_endpoint'))
-        else:
-            create_connection_url = connection_create_by_uuid_url_template.format(
-                    org=target_org,
-                    app=target_app,
-                    collection=target_collection,
-                    uuid=source_identifier,
-                    verb=edge_name,
-                    target_uuid=e_connection.get('uuid'),
                     **config.get('target_endpoint'))
 
         if not config.get('skip_cache_read', False):
