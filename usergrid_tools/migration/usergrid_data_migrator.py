@@ -1575,6 +1575,10 @@ def parse_args():
                         type=str,
                         default='destination.json')
 
+    parser.add_argument('--redis_socket',
+                        help='The path to the socket for redis to use',
+                        type=str)
+
     parser.add_argument('--limit',
                         help='The number of entities to return per query request',
                         type=int,
@@ -2079,8 +2083,12 @@ def main():
     logger.warn('Script starting')
 
     try:
-        # this does not try to connect to redis
-        cache = redis.StrictRedis(host='localhost', port=6379, db=0)
+        if config.get('redis_socket') is not None:
+            cache = redis.Redis(unix_socket_path=config.get('redis_socket'))
+
+        else:
+            # this does not try to connect to redis
+            cache = redis.StrictRedis(host='localhost', port=6379, db=0)
 
         # this is necessary to test the connection to redis
         cache.get('usergrid')
