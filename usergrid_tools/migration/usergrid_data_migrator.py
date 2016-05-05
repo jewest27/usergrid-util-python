@@ -729,12 +729,6 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
     if not include_edge(collection_name, edge_name):
         return True
 
-    if depth > config.get('graph_depth', 100):
-        logger.debug('Reached Max Graph Depth of [%s] in migrate_out_graph_edge_type' % depth)
-        return True
-    else:
-        logger.debug('Processing @ Graph Depth [%s]' % depth)
-
     source_uuid = source_entity.get('uuid')
 
     key = '%s:edge:out:%s:%s' % (key_version, source_uuid, edge_name)
@@ -855,11 +849,6 @@ def exclude_collection(collection_name):
 
 
 def migrate_in_graph_edge_type(app, collection_name, source_entity, edge_name, depth=0):
-    depth += 1
-
-    if depth > config.get('graph_depth', 100):
-        logger.debug('Reached Max Graph Depth of [%s] in migrate_in_graph_edge_type' % depth)
-        return True
 
     source_uuid = source_entity.get('uuid')
     key = '%s:edges:in:%s:%s' % (key_version, source_uuid, edge_name)
