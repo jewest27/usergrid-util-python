@@ -84,7 +84,7 @@ def init_logging(stdout_enabled=True):
 
     # base log file
 
-    log_file_name = '%s/migrator.log' % config.get('log_dir')
+    log_file_name = '%s/%s-%s-%s-migrator.log' % (config.get('log_dir'), config.get('org'), config.get('migrate'), ECID)
 
     # ConcurrentRotatingFileHandler
     rotating_file = ConcurrentRotatingFileHandler(filename=log_file_name,
@@ -96,7 +96,7 @@ def init_logging(stdout_enabled=True):
 
     root_logger.addHandler(rotating_file)
 
-    error_log_file_name = '%s/migrator_errors.log' % config.get('log_dir')
+    error_log_file_name = '%s/%s-%s-%s-migrator-errors.log' % (config.get('log_dir'), config.get('org'), config.get('migrate'), ECID)
     error_rotating_file = ConcurrentRotatingFileHandler(filename=error_log_file_name,
                                                         mode='a',
                                                         maxBytes=404857600,
