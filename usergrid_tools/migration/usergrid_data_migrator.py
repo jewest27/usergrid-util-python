@@ -153,6 +153,7 @@ class StatusListener(Process):
         }
 
         empty_count = 0
+        status_file_name='%s/%s-%s-status.json' % (config.get('log_dir'), config.get('org'), ECID)
 
         while keep_going:
 
@@ -228,7 +229,9 @@ class StatusListener(Process):
                         status_logger.warn('UPDATED status of org processed: %s' % json.dumps(org_results))
 
                         try:
-                            with open('%s/%s-%s-status.json' % (config.get('log_dir'), config.get('org'), ECID), 'w') as f:
+                            logger.info('Writing final status to file: %s' % status_file_name)
+
+                            with open(status_file_name, 'w') as f:
                                 json.dump(org_results, f, indent=2)
                         except:
                             print traceback.format_exc()
@@ -262,7 +265,8 @@ class StatusListener(Process):
         logger.warn('FINAL status of org processed: %s' % json.dumps(org_results))
 
         try:
-            with open('%s/%s-%s-status.json' % (config.get('log_dir'), config.get('org'), ECID), 'w') as f:
+            logger.info('Writing final status to file: %s' % status_file_name)
+            with open(status_file_name, 'w') as f:
                 json.dump(org_results, f, indent=2)
         except:
             print traceback.format_exc()
