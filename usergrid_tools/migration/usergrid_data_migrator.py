@@ -484,7 +484,7 @@ class CollectionWorker(Process):
                         if counter % 1000 == 1:
                             try:
                                 collection_worker_logger.warning(
-                                        'Sending FINAL stats for app/collection [%s / %s]: %s' % (
+                                        'Sending stats for app/collection [%s / %s]: %s' % (
                                             app, collection_name, status_map))
 
                                 self.response_queue.put((app, collection_name, status_map))
@@ -709,15 +709,15 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
                     time.sleep(DEFAULT_RETRY_SLEEP)
                 else:
                     logger.critical(
-                            'FAILED [%s] (WILL NOT RETRY - max attempts) to create connection at URL=[%s]: %s' % (
-                                r_create.status_code, create_connection_url, r_create.text))
+                        'FAILED [%s] (WILL NOT RETRY - max attempts) to create connection at URL=[%s]: %s' % (
+                            r_create.status_code, create_connection_url, r_create.text))
                     return False
 
             elif r_create.status_code in [401, 404]:
-                logger.critical(
-                        'FAILED [%s] (WILL NOT RETRY - max attempts) to create connection at URL=[%s]: %s' % (
-                            r_create.status_code, create_connection_url, r_create.text))
-                return False
+                logger.critical('FAILED [%s] (WILL attempt repair) to create connection at URL=[%s]: %s' % (
+                    r_create.status_code, create_connection_url, r_create.text))
+                migrate_data(app, collection_name, source_entity, force=True)
+                migrate_data(app, collection_name, target_entity, force=True)
             else:
                 logger.warning('FAILED [%s] (will retry) to create connection at URL=[%s]: %s' % (
                     r_create.status_code, create_connection_url, r_create.text))
@@ -849,7 +849,6 @@ def exclude_collection(collection_name):
 
 
 def migrate_in_graph_edge_type(app, collection_name, source_entity, edge_name, depth=0):
-
     source_uuid = source_entity.get('uuid')
     key = '%s:edges:in:%s:%s' % (key_version, source_uuid, edge_name)
 
@@ -912,7 +911,8 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
 
     # short circuit if the graph depth exceeds what was specified
     if depth > config.get('graph_depth', 1):
-        logger.debug('Reached Max Graph Depth, stopping after [%s] on [%s / %s]' % (depth, collection_name, source_uuid))
+        logger.debug(
+                'Reached Max Graph Depth, stopping after [%s] on [%s / %s]' % (depth, collection_name, source_uuid))
         return True
     else:
         logger.debug('Processing @ Graph Depth [%s]' % depth)
@@ -1146,12 +1146,12 @@ def migrate_permissions(app, collection_name, source_entity, attempts=0):
     return True
 
 
-def migrate_data(app, collection_name, source_entity, attempts=0):
+def migrate_data(app, collection_name, source_entity, attempts=0, force=False):
     if config.get('skip_data'):
         return True
 
     # check the cache to see if this entity has changed
-    if not config.get('skip_cache_read', False):
+    if not config.get('skip_cache_read', False) and not force:
         try:
             str_modified = cache.get(source_entity.get('uuid'))
 
