@@ -714,10 +714,17 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
                     return False
 
             elif r_create.status_code in [401, 404]:
-                logger.critical('FAILED [%s] (WILL attempt repair) to create connection at URL=[%s]: %s' % (
-                    r_create.status_code, create_connection_url, r_create.text))
-                migrate_data(app, source_entity.get('type'), source_entity, force=True)
-                migrate_data(app, target_entity.get('type'), target_entity, force=True)
+
+                if config.get('repair_data', False):
+                    logger.critical('FAILED [%s] (WILL attempt repair) to create connection at URL=[%s]: %s' % (
+                        r_create.status_code, create_connection_url, r_create.text))
+                    migrate_data(app, source_entity.get('type'), source_entity, force=True)
+                    migrate_data(app, target_entity.get('type'), target_entity, force=True)
+
+                else:
+                    logger.critical('FAILED [%s] (WILL NOT attempt repair) to create connection at URL=[%s]: %s' % (
+                        r_create.status_code, create_connection_url, r_create.text))
+
             else:
                 logger.warning('FAILED [%s] (will retry) to create connection at URL=[%s]: %s' % (
                     r_create.status_code, create_connection_url, r_create.text))
@@ -1147,7 +1154,7 @@ def migrate_permissions(app, collection_name, source_entity, attempts=0):
 
 
 def migrate_data(app, collection_name, source_entity, attempts=0, force=False):
-    if config.get('skip_data'):
+    if config.get('skip_data') and not force:
         return True
 
     # check the cache to see if this entity has changed
@@ -1607,6 +1614,10 @@ def parse_args():
                         type=str,
                         default='select * order by created asc')
     # default='select * order by created asc')
+
+    parser.add_argument('--repair_data',
+                        help='Repair data when iterating/migrating graph but skipping data',
+                        action='store_true')
 
     parser.add_argument('--skip_data',
                         help='Skip migrating data (useful for connections only)',
