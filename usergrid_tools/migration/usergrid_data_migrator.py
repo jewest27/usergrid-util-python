@@ -227,6 +227,12 @@ class StatusListener(Process):
 
                         status_logger.warn('UPDATED status of org processed: %s' % json.dumps(org_results))
 
+                        try:
+                            with open('%s/%s-%s-status.json' % (config.get('log_dir'), config.get('org'), ECID), 'w') as f:
+                                json.dump(org_results, f, indent=2)
+                        except:
+                            print traceback.format_exc()
+
                 except KeyboardInterrupt, e:
                     raise e
 
@@ -254,6 +260,13 @@ class StatusListener(Process):
                 print traceback.format_exc()
 
         logger.warn('FINAL status of org processed: %s' % json.dumps(org_results))
+
+        try:
+            with open('%s/%s-%s-status.json' % (config.get('log_dir'), config.get('org'), ECID), 'w') as f:
+                json.dump(org_results, f, indent=2)
+        except:
+            print traceback.format_exc()
+
 
 
 class ErrorListener(Process):
@@ -665,6 +678,12 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
         else:
             target_type_id = '%s/%s' % ('devices', target_entity.get('uuid'))
 
+    if target_entity.get('type') == 'receipt':
+        if edge_name == 'receipts':
+            target_type_id = target_entity.get('uuid')
+        else:
+            target_type_id = '%s/%s' % ('receipts', target_entity.get('uuid'))
+
     create_connection_url = connection_create_by_pairs_url_template.format(
             org=target_org,
             app=target_app,
@@ -697,7 +716,7 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
         if r_create.status_code == 200:
 
             if not config.get('skip_cache_write', False):
-                cache.set(create_connection_url, create_connection_url)
+                cache.set(create_connection_url, 1)
 
             return True
         else:
@@ -716,7 +735,7 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
             elif r_create.status_code in [401, 404]:
 
                 if config.get('repair_data', False):
-                    logger.critical('FAILED [%s] (WILL attempt repair) to create connection at URL=[%s]: %s' % (
+                    logger.warning('FAILED [%s] (WILL attempt repair) to create connection at URL=[%s]: %s' % (
                         r_create.status_code, create_connection_url, r_create.text))
                     migrate_data(app, source_entity.get('type'), source_entity, force=True)
                     migrate_data(app, target_entity.get('type'), target_entity, force=True)
@@ -751,7 +770,7 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
             cache.delete(key)
 
     if not config.get('skip_cache_write', False):
-        cache.set(name=key, value=str(datetime.datetime.utcnow()), ex=config.get('visit_cache_ttl', 3600 * 12))
+        cache.set(name=key, value=str(int(time.time())), ex=config.get('visit_cache_ttl', 3600 * 2))
 
     logger.debug('Visiting EDGE [%s / %s (%s) --%s-->] at %s' % (
         collection_name, source_uuid, get_uuid_time(source_uuid), edge_name, str(datetime.datetime.utcnow())))
@@ -870,7 +889,7 @@ def migrate_in_graph_edge_type(app, collection_name, source_entity, edge_name, d
             cache.delete(key)
 
     if not config.get('skip_cache_write', False):
-        cache.set(name=key, value=str(datetime.datetime.utcnow()), ex=config.get('visit_cache_ttl', 3600 * 12))
+        cache.set(name=key, value=str(int(time.time())), ex=config.get('visit_cache_ttl', 3600 * 2))
 
     logger.debug('Visiting EDGE [--%s--> %s / %s (%s)] at %s' % (
         edge_name, collection_name, source_uuid, get_uuid_time(source_uuid), str(datetime.datetime.utcnow())))
@@ -943,7 +962,7 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
     logger.info('Visiting GRAPH %s at %s' % (entity_tag, str(datetime.datetime.utcnow())))
 
     if not config.get('skip_cache_write', False):
-        cache.set(name=key, value=str(datetime.datetime.utcnow()), ex=config.get('visit_cache_ttl', 3600 * 12))
+        cache.set(name=key, value=str(int(time.time())), ex=config.get('visit_cache_ttl', 3600 * 2))
 
     # first, migrate data for current node
     response = migrate_data(app, collection_name, source_entity)
@@ -1067,7 +1086,7 @@ def prune_graph(app, collection_name, source_entity):
 
     logger.debug('pruning GRAPH %s at %s' % (entity_tag, str(datetime.datetime.utcnow())))
     if not config.get('skip_cache_write', False):
-        cache.set(name=key, value=str(datetime.datetime.utcnow()), ex=config.get('visit_cache_ttl', 3600 * 12))
+        cache.set(name=key, value=str(int(time.time())), ex=config.get('visit_cache_ttl', 3600 * 2))
 
     if collection_name in config.get('exclude_collection', []):
         logger.debug('Excluding (Collection) entity %s' % entity_tag)
@@ -1232,8 +1251,7 @@ def migrate_data(app, collection_name, source_entity, attempts=0, force=False):
                 logger.debug('SETTING CACHE | uuid=[%s] | modified=[%s]' % (
                     source_entity.get('uuid'), str(source_entity.get('modified'))))
 
-                if not config.get('skip_cache_write', False):
-                    cache.set(source_entity.get('uuid'), str(source_entity.get('modified')))
+                cache.set(source_entity.get('uuid'), str(source_entity.get('modified')))
 
             if collection_name in ['role', 'group', 'roles', 'groups']:
                 migrate_permissions(app, collection_name, source_entity, attempts=0)
