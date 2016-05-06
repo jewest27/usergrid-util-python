@@ -321,8 +321,8 @@ class EntityWorker(Process):
                 app, collection_name, entity = self.queue.get(timeout=120)
                 empty_count = 0
 
-                if entity.get('type') == 'user':
-                    entity = confirm_user_entity(app, entity)
+                # if entity.get('type') == 'user':
+                #     entity = confirm_user_entity(app, entity)
 
                 # the handler operation is the specified operation such as migrate_graph
                 if self.handler_function is not None:
@@ -912,7 +912,7 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
 
     # short circuit if the graph depth exceeds what was specified
     if depth > config.get('graph_depth', 1):
-        logger.info('Reached Max Graph Depth, stopping after [%s] on [%s / %s]' % (depth, collection_name, source_uuid))
+        logger.debug('Reached Max Graph Depth, stopping after [%s] on [%s / %s]' % (depth, collection_name, source_uuid))
         return True
     else:
         logger.debug('Processing @ Graph Depth [%s]' % depth)
@@ -1071,48 +1071,6 @@ def prune_graph(app, collection_name, source_entity):
 
     for edge_name in out_edge_names:
         prune_edge(edge_name, app, collection_name, source_entity)
-
-
-def confirm_user_entity(app, source_entity, attempts=0):
-    source_entity_url = get_entity_url_template.format(org=config.get('org'),
-                                                       app=app,
-                                                       collection='users',
-                                                       uuid=source_entity.get('username'),
-                                                       limit=config.get('limit'),
-                                                       **config.get('source_endpoint'))
-
-    if attempts >= 5:
-        logger.error('Punting after [%s] attempts to confirm user at URL [%s], will use the source entity...' % (
-            attempts, source_entity_url))
-
-        return source_entity
-
-    r = session_source.get(url=source_entity_url)
-
-    if r.status_code == 200:
-        retrieved_entity = r.json().get('entities')[0]
-
-        if retrieved_entity.get('uuid') != source_entity.get('uuid'):
-            logger.info(
-                    'UUID of Source Entity [%s] differs from uuid [%s] of retrieved entity at URL=[%s] and will be substituted' % (
-                        source_entity.get('uuid'), retrieved_entity.get('uuid'), source_entity_url))
-
-        return retrieved_entity
-
-    elif 'service_resource_not_found' in r.text:
-
-        logger.warn('Unable to retrieve user at URL [%s], and will use source entity.  status=[%s] response: %s...' % (
-            source_entity_url, r.status_code, r.text))
-
-        return source_entity
-
-    else:
-        logger.error('After [%s] attempts to confirm user at URL [%s], received status [%s] message: %s...' % (
-            attempts, source_entity_url, r.status_code, r.text))
-
-        time.sleep(DEFAULT_RETRY_SLEEP)
-
-        return confirm_user_entity(app, source_entity, attempts)
 
 
 def reput(app, collection_name, source_entity, attempts=0):
