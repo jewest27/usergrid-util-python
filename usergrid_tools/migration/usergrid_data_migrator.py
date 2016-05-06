@@ -229,7 +229,7 @@ class StatusListener(Process):
                         status_logger.warn('UPDATED status of org processed: %s' % json.dumps(org_results))
 
                         try:
-                            logger.info('Writing final status to file: %s' % status_file_name)
+                            logger.info('Writing status to file: %s' % status_file_name)
 
                             with open(status_file_name, 'w') as f:
                                 json.dump(org_results, f, indent=2)
