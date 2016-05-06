@@ -716,8 +716,8 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
             elif r_create.status_code in [401, 404]:
                 logger.critical('FAILED [%s] (WILL attempt repair) to create connection at URL=[%s]: %s' % (
                     r_create.status_code, create_connection_url, r_create.text))
-                migrate_data(app, collection_name, source_entity, force=True)
-                migrate_data(app, collection_name, target_entity, force=True)
+                migrate_data(app, source_entity.get('type'), source_entity, force=True)
+                migrate_data(app, target_entity.get('type'), target_entity, force=True)
             else:
                 logger.warning('FAILED [%s] (will retry) to create connection at URL=[%s]: %s' % (
                     r_create.status_code, create_connection_url, r_create.text))
@@ -1216,7 +1216,7 @@ def migrate_data(app, collection_name, source_entity, attempts=0, force=False):
 
         if r.status_code == 200:
             # Worked => WE ARE DONE
-            logger.debug(
+            logger.info(
                     'migrate_data | success=[%s] | attempts=[%s] | entity=[%s / %s / %s] | created=[%s] | modified=[%s]' % (
                         True, attempts, config.get('org'), app, source_identifier, source_entity.get('created'),
                         source_entity.get('modified'),))
