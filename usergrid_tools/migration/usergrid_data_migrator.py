@@ -84,7 +84,8 @@ def init_logging(stdout_enabled=True):
 
     # base log file
 
-    log_file_name = '%s/%s-%s-%s-migrator.log' % (config.get('log_dir'), config.get('org'), config.get('migrate'), ECID)
+    log_file_name = os.path.join(config.get('log_dir'),
+                                 '%s-%s-%s-migrator.log' % (config.get('org'), config.get('migrate'), ECID))
 
     # ConcurrentRotatingFileHandler
     rotating_file = ConcurrentRotatingFileHandler(filename=log_file_name,
@@ -95,8 +96,9 @@ def init_logging(stdout_enabled=True):
     rotating_file.setLevel(logging.INFO)
 
     root_logger.addHandler(rotating_file)
+    error_log_file_name = os.path.join(config.get('log_dir'), '%s-%s-%s-migrator-errors.log' % (
+        config.get('org'), config.get('migrate'), ECID))
 
-    error_log_file_name = '%s/%s-%s-%s-migrator-errors.log' % (config.get('log_dir'), config.get('org'), config.get('migrate'), ECID)
     error_rotating_file = ConcurrentRotatingFileHandler(filename=error_log_file_name,
                                                         mode='a',
                                                         maxBytes=404857600,
@@ -153,7 +155,9 @@ class StatusListener(Process):
         }
 
         empty_count = 0
-        status_file_name='%s/%s-%s-status.json' % (config.get('log_dir'), config.get('org'), ECID)
+
+        status_file_name = os.path.join(config.get('log_dir'),
+                                        '%s-%s-%s-status.json' % (config.get('org'), config.get('migrate'), ECID))
 
         while keep_going:
 
@@ -270,48 +274,6 @@ class StatusListener(Process):
                 json.dump(org_results, f, indent=2)
         except:
             print traceback.format_exc()
-
-
-
-class ErrorListener(Process):
-    def __init__(self, worker_queue):
-        super(ErrorListener, self).__init__()
-        self.work_queue = worker_queue
-
-    def run(self):
-
-        keep_going = True
-
-        empty_count = 0
-        error_count = 0
-
-        while keep_going:
-
-            try:
-                error_object = self.work_queue.get(timeout=3600)
-                error_count += 1
-                empty_count = 0
-
-                status_logger.error('ErrorListener - errors=[%s] Writing...' % error_count)
-
-                with open('/mnt/raid/logs/%s_errors.txt' % ECID, 'a') as f:
-                    f.write(json.dumps(error_object))
-
-            except KeyboardInterrupt, e:
-                status_logger.error('ErrorListener - errors=[%s] Interrupted!' % error_count)
-                raise e
-
-            except Empty:
-                status_logger.error('EMPTY! empty_count=[%s], error_count=[%s]' % (empty_count, error_count))
-                empty_count += 1
-
-                if empty_count >= 24:
-                    status_logger.error('STOPPING! empty_count=[%s], error_count=[%s]' % (empty_count, error_count))
-
-            except:
-                print traceback.format_exc()
-
-        status_logger.error('FINAL! empty_count=[%s], error_count=[%s]' % (empty_count, error_count))
 
 
 class EntityWorker(Process):
@@ -732,8 +694,8 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
                     time.sleep(DEFAULT_RETRY_SLEEP)
                 else:
                     logger.critical(
-                        'FAILED [%s] (WILL NOT RETRY - max attempts) to create connection at URL=[%s]: %s' % (
-                            r_create.status_code, create_connection_url, r_create.text))
+                            'FAILED [%s] (WILL NOT RETRY - max attempts) to create connection at URL=[%s]: %s' % (
+                                r_create.status_code, create_connection_url, r_create.text))
                     return False
 
             elif r_create.status_code in [401, 404]:
@@ -1270,7 +1232,6 @@ def migrate_data(app, collection_name, source_entity, attempts=0, force=False):
                 r.status_code, attempts, target_entity_url_by_name, json.dumps(source_entity), r.text))
 
             if attempts >= 5:
-                traceback.print_stack()
                 logger.critical(
                         'ABORT migrate_data | success=[%s] | attempts=[%s] | created=[%s] | modified=[%s] %s / %s / %s' % (
                             True, attempts, source_entity.get('created'), source_entity.get('modified'), app,
@@ -1292,6 +1253,13 @@ def migrate_data(app, collection_name, source_entity, attempts=0, force=False):
                                 attempts, target_entity_url_by_name, json.dumps(source_entity), r.text))
 
                     return False
+
+            elif r.status_code == 403:
+                logger.critical(
+                        'ABORT migrate_data | success=[%s] | attempts=[%s] | created=[%s] | modified=[%s] %s / %s / %s' % (
+                            False, attempts, source_entity.get('created'), source_entity.get('modified'), app,
+                            collection_name, source_identifier))
+                return False
 
     except:
         logger.error(traceback.format_exc())
