@@ -717,6 +717,22 @@ def create_connection(app, collection_name, source_entity, edge_name, target_ent
     return False
 
 
+def process_edges(app, collection_name, source_entity, edge_name, connection_stack):
+
+    source_identifier = get_source_identifier(source_entity)
+
+    while len(connection_stack) > 0:
+
+        target_entity = connection_stack.pop()
+
+        if exclude_collection(collection_name) or exclude_collection(target_entity.get('type')):
+            logger.debug('EXCLUDING Edge (collection): [%s / %s / %s] --[%s]--> ?' % (
+                app, collection_name, source_identifier, edge_name ))
+            continue
+
+        create_connection(app, collection_name, source_entity, edge_name, target_entity)
+
+
 def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, depth=0):
     if not include_edge(collection_name, edge_name):
         return True
@@ -780,17 +796,7 @@ def migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, 
         count_edges += 1
         connection_stack.append(target_entity)
 
-    while len(connection_stack) > 0:
-
-        target_entity = connection_stack.pop()
-
-        if exclude_collection(collection_name) or exclude_collection(target_entity.get('type')):
-            logger.debug('EXCLUDING Edge (collection): [%s / %s / %s] --[%s]--> [%s / %s / %s]' % (
-                app, collection_name, source_identifier, edge_name, target_app, target_entity.get('type'),
-                target_entity.get('name')))
-            return True
-
-        create_connection(app, collection_name, source_entity, edge_name, target_entity)
+    process_edges(app, collection_name, source_entity, edge_name, connection_stack)
 
     return response
 
@@ -943,8 +949,11 @@ def migrate_graph(app, collection_name, source_entity, depth=0):
     for edge_name in out_edge_names:
 
         if not exclude_edge(collection_name, edge_name):
-            response = migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name,
-                                                   depth) and response
+            response = migrate_out_graph_edge_type(app, collection_name, source_entity, edge_name, depth) and response
+
+        if config.get('prune', False):
+            prune_edge_by_name(edge_name, app, collection_name, source_entity)
+
     # gather the inbound edge names
     in_edge_names = [edge_name for edge_name in source_entity.get('metadata', {}).get('connecting', [])]
 
@@ -969,7 +978,7 @@ def collect_entities(q):
     return response
 
 
-def prune_edge(edge_name, app, collection_name, source_entity):
+def prune_edge_by_name(edge_name, app, collection_name, source_entity):
     if not include_edge(collection_name, edge_name):
         return True
 
@@ -1066,7 +1075,7 @@ def prune_graph(app, collection_name, source_entity):
     out_edge_names += [edge_name for edge_name in source_entity.get('metadata', {}).get('connections', [])]
 
     for edge_name in out_edge_names:
-        prune_edge(edge_name, app, collection_name, source_entity)
+        prune_edge_by_name(edge_name, app, collection_name, source_entity)
 
 
 def reput(app, collection_name, source_entity, attempts=0):
@@ -1611,6 +1620,10 @@ def parse_args():
 
     parser.add_argument('--repair_data',
                         help='Repair data when iterating/migrating graph but skipping data',
+                        action='store_true')
+
+    parser.add_argument('--prune',
+                        help='Prune the graph while processing (instead of the prune operation)',
                         action='store_true')
 
     parser.add_argument('--skip_data',

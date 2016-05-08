@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 __author__ = 'Jeff West @ ApigeeCorporation'
 
-VERSION = '0.5.11'
+VERSION = '0.5.12'
 
 setup(
         name='usergrid-tools',
