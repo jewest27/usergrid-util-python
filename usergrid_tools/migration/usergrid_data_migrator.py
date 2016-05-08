@@ -1023,7 +1023,11 @@ def prune_edge(edge_name, app, collection_name, source_entity):
 
             while attempts < 5:
                 attempts += 1
+
                 r = session_target.delete(delete_connection_url)
+
+                if not config.get('skip_cache_write'):
+                    cache.delete(delete_connection_url)
 
                 if r.status_code == 200:
                     logger.info('Pruned edge on attempt [%s] URL=[%s]' % (attempts, delete_connection_url))
