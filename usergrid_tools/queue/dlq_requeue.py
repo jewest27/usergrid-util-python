@@ -4,6 +4,8 @@ import datetime
 import os
 import time
 import sys
+import uuid
+from Queue import Empty
 
 import boto
 from boto import sqs
@@ -84,15 +86,30 @@ class Writer(Process):
         counter = 0
 
         # note that there is a better way but this way works.  update would be to use the batch interface
-        while True:
-            counter += 1
-            if counter % 100 == 1:
-                print 'WRITE %s' % counter
 
-            body = self.work_queue.get()
-            m = RawMessage()
-            m.set_body(body)
-            sqs_queue.write(m, delay_seconds=300)
+        batch = []
+
+        while True:
+            try:
+                body = self.work_queue.get(timeout=10)
+                counter += 1
+
+                if counter % 100 == 1:
+                    print 'WRITER %s' % counter
+
+                batch.append((str(uuid.uuid1()), body, 0))
+
+                if len(batch) >= 10:
+                    print 'WRITING BATCH'
+                    sqs_queue.write_batch(batch, delay_seconds=300)
+                    batch = []
+
+            except Empty:
+
+                if len(batch) > 0:
+                    print 'WRITING BATCH'
+                    sqs_queue.write_batch(batch, delay_seconds=300)
+                    batch = []
 
 
 class Reader(Process):
@@ -150,6 +167,7 @@ def main():
 
     writers = [Writer(target_queue_name, sqs_config, work_queue) for r in xrange(args.get('writers'))]
     [w.start() for w in writers]
+
 
 if __name__ == '__main__':
     main()
