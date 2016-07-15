@@ -9,30 +9,37 @@ __author__ = 'ApigeeCorporation'
 SHUTDOWN_NODES = True
 
 nodes = [
+    # 'res010eu',
+    # 'res011eu',
+    # 'res012eu',
+    # 'res013eu',
+    # 'res014eu',
+    # 'res015eu',
 
+    # 'res000eu',
+    # 'res001eu',
+    # 'res002eu',
+    # 'res003eu',
+    # 'res004eu',
+    # 'res005eu',
+    # 'res102wo',
+    # 'res103wo',
+    # 'res104wo',
+    # 'res105wo',
+    # 'res106wo',
+    # 'res201wo',
+    # 'res202wo',
+    # 'res203wo',
+    # 'res204wo',
+    # 'res205wo',
+    # 'res206wo',
+    # 'res207wo',
 ]
 
-c3_nodes = [
-    'ees018wo',
-    'ees019wo'
-]
 
 base_url = 'http://localhost:9200'
 
-
-# print first_half
-
-def get_nodes_string(p_exclude_nodes):
-    nodes_string = ''
-    for i, node in enumerate(p_exclude_nodes):
-        nodes_string += node
-        if i != len(p_exclude_nodes) - 1:
-            nodes_string += ','
-
-    return nodes_string
-
-
-exclude_nodes = c3_nodes[0:10]
+exclude_nodes = nodes
 
 nodes_string = ",".join(exclude_nodes)
 
@@ -91,7 +98,7 @@ while not ready:
 
                                 print 'Shutting down node %s: %s' % (node, shutdown_url)
 
-                                # r = requests.post(shutdown_url)
+                                r = requests.post(shutdown_url)
 
                                 if r.status_code == 200:
                                     nodes_shut_down.append(node)
@@ -100,6 +107,6 @@ while not ready:
                                     print 'Shutdown failed: %s: %s' % (r.status_code, r.text)
     if not ready:
         print 'NOT READY! Waiting for %s nodes and %s GB' % (nodes_left, bytes_left / 1024.0 / 1000000)
-        time.sleep(1)
+        time.sleep(10)
 
-print 'READY TO MOVE!'
+# print 'READY TO MOVE!'

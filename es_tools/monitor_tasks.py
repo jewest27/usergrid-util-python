@@ -9,7 +9,7 @@ def total_milliseconds(td):
     return (td.microseconds + td.seconds * 1000000) / 1000
 
 
-url_template = "http://localhost:9211/_cat/pending_tasks?v'"
+url_template = "http://localhost:9200/_cat/pending_tasks?v'"
 
 x = 0
 

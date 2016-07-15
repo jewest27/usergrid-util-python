@@ -14,7 +14,8 @@ print 'retrieved %s indices' % len(indices)
 NUMBER_VALUE = 0
 
 includes = [
-    # 'b6768a08-b5d5-11e3-a495-11ddb1de66c8',
+    'rug002sr_euwi',
+    # 'rug002mr',
     # 'b6768a08-b5d5-11e3-a495-10ddb1de66c3',
     # 'b6768a08-b5d5-11e3-a495-11ddb1de66c9',
 ]
@@ -28,6 +29,7 @@ excludes = [
 
 counter = 0
 process = False
+delete_counter = 0
 
 for index in indices:
     process = False
@@ -49,10 +51,11 @@ for index in indices:
                 process = False
 
     if process:
+        delete_counter += 1
+        print delete_counter
         print index
 
         url_template = '%s/%s' % (url_base, index)
         print url_template
 
-        # response = requests.delete('%s/%s' % (url_base, index))
-        # settings = response.json()
+        response = requests.delete('%s/%s' % (url_base, index))

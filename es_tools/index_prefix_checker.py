@@ -60,6 +60,8 @@ for index, index_data in indices.iteritems():
             index_prefix = index.split('__')[0]
         elif '^' in index:
             index_prefix = index.split('^')[0]
+        else:
+            index_prefix = index.split('_')[0]
 
         if index_prefix not in indexes:
             indexes[index_prefix] = []
