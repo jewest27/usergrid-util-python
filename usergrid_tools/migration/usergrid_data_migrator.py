@@ -26,7 +26,7 @@ import urllib3
 
 __author__ = 'Jeff West @ ApigeeCorporation'
 
-ECID = str(uuid.uuid4())
+ECID = str(uuid.uuid1())
 key_version = 'v4'
 
 logger = logging.getLogger('GraphMigrator')
